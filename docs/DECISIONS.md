@@ -298,8 +298,10 @@ found a reason to deviate.
   alone sits in the window title, title bar, tray and notifications; the name with its descriptor
   in the README titles and the store-like places.
 - **Everything was renamed**, the identifier included (`dev.yusai.chidori`, crates `chidori` and `chidori-core`,
-  the GitHub repository `yusaitajiri/chidori`, whose old address GitHub redirects, so Kikitori's
-  updater still finds new releases). The app's folders are named after the identifier and the
+  the GitHub repository `chidori`, whose old address GitHub redirects, so Kikitori's
+  updater still finds new releases). The repository has since moved to the `yusai-apps`
+  organisation (`yusai-apps/chidori`); GitHub redirects `yusaitajiri/chidori` too, so copies whose
+  update endpoint still names the old owner keep updating. The app's folders are named after the identifier and the
   install after the product name, so two things carry existing installs over: the installer
   silently uninstalls Kikitori before installing Chidori (`REMOVE_KIKITORI` in `xtask`; a silent
   uninstall keeps the app data), and on its first launch Chidori moves `%APPDATA%` and

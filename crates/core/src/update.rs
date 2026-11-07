@@ -9,7 +9,7 @@ use serde::Deserialize;
 
 use crate::error::{AppError, AppResult, ErrorCode};
 
-pub const ENDPOINT: &str = "https://github.com/yusaitajiri/chidori/releases/latest/download/latest.json";
+pub const ENDPOINT: &str = "https://github.com/yusai-apps/chidori/releases/latest/download/latest.json";
 
 /// The release key's public half, as `tauri signer generate` wrote it (base64 of the key file).
 /// `cargo xtask dist` checks each new installer's signature against the same file.
