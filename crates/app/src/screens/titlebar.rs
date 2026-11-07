@@ -219,21 +219,27 @@ pub fn view(app: &App) -> El {
     let compact = app.compact();
     let mut bar = row().flex_none().gap(px(4.0)).h(px(40.0)).pl(px(12.0)).pr(px(6.0));
     if back_of(app).is_some() {
-        bar = bar.child(icon_button(Icon::ArrowLeft, t("back"), Size::Sm, Some(Message::Titlebar(Msg::Back))));
+        bar = bar.child(solid(icon_button(Icon::ArrowLeft, t("back"), Size::Sm, Some(Message::Titlebar(Msg::Back)))));
     }
-    let lead: El = if app.rec.busy() { live_tag(app) } else { brand() };
+    let lead: El = if app.rec.busy() { solid(live_tag(app)) } else { brand() };
     bar = bar.child(row().flex_1().min_w_0().overflow_hidden().child(lead));
     if !setup {
         if compact {
             bar = bar
-                .child(icon_button(Icon::History, t("history"), Size::Sm, Some(Message::Go(View::History))))
-                .child(icon_button(Icon::Settings, t("settings"), Size::Sm, Some(Message::Go(View::Settings))));
+                .child(solid(icon_button(Icon::History, t("history"), Size::Sm, Some(Message::Go(View::History)))))
+                .child(solid(icon_button(Icon::Settings, t("settings"), Size::Sm, Some(Message::Go(View::Settings)))));
         } else {
-            bar = bar.child(places(app));
+            bar = bar.child(solid(places(app)));
         }
         bar = bar.child(div().px(px(4.0)).child(divider()));
     }
-    bar = bar.child(window_buttons(app, !setup));
+    bar = bar.child(solid(window_buttons(app, !setup)));
     // Where nothing else takes the pointer, the bar moves the window (Windows' own caption drag).
     bar.id("titlebar").window_control_area(WindowControlArea::Drag).into_any_element()
+}
+
+/// Keeps the bar's drag area from under what can be clicked: Windows asks GPUI what the pointer
+/// is over, and any drag area still under it makes the click a window drag.
+fn solid(content: El) -> El {
+    div().id(crate::ui::uid("solid")).flex().flex_none().occlude().child(content).into_any_element()
 }
