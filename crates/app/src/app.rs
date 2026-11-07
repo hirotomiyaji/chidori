@@ -1047,7 +1047,9 @@ impl AppView {
     }
 
     fn on_bounds(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        let b = window.bounds();
+        // Saved as GPUI saves a window for reopening: its live origin is the client area's, which
+        // opened 4 px higher on every launch.
+        let b = window.window_bounds().get_bounds();
         let origin = Point::new(f32::from(b.origin.x), f32::from(b.origin.y));
         if self.last_origin != Some(origin) {
             self.last_origin = Some(origin);
