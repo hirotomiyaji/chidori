@@ -494,7 +494,7 @@ fn wave_points(samples: &[f32], frac: f32) -> (Vec<Point>, Point) {
 fn wave(app: &App) -> El {
     let w = &app.wizard;
     let frac = w.wave.at.map_or(0.0, |at| (app.now.saturating_duration_since(at).as_secs_f32() / 0.1).clamp(0.0, 1.0));
-    let samples: Vec<f32> = if w.testing { w.wave.samples.iter().copied().collect() } else { Vec::new() };
+    let samples: Vec<f32> = if w.testing { w.wave.samples.clone() } else { Vec::new() };
     let frac = if w.testing { frac } else { 0.0 };
     let active = w.testing;
     canvas_el(None, move |frame| {

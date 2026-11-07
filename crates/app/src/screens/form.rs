@@ -1,6 +1,5 @@
 //! Pieces 設定, the model list and the setup wizard share: the big title with a line beside it,
-//! the scrolling body, choices for a dropdown, small tags and cards, and fitting a summary into
-//! its column.
+//! the scrolling body, choices for a dropdown, small tags and cards.
 
 use std::fmt;
 
@@ -120,39 +119,4 @@ pub fn link(content: impl IntoElement, on: Message) -> El {
 /// A paragraph of body text.
 pub fn para(s: String) -> El {
     theme::t(s, tokens::BODY, p().ink).into_any_element()
-}
-
-/// Shortens `s` with an ellipsis so it fits about `max_px` at `size` px: Japanese takes a full
-/// em, Latin about half of one.
-pub fn fit(s: &str, max_px: f32, size: f32) -> String {
-    let width = |c: char| if c.is_ascii() { 0.55 } else { 1.0 } * size;
-    let total: f32 = s.chars().map(width).sum();
-    if total <= max_px {
-        return s.to_string();
-    }
-    let room = max_px - width('…');
-    let mut used = 0.0;
-    let mut out = String::new();
-    for c in s.chars() {
-        used += width(c);
-        if used > room {
-            break;
-        }
-        out.push(c);
-    }
-    out.push('…');
-    out
-}
-
-#[cfg(test)]
-mod tests {
-    use super::fit;
-
-    #[test]
-    fn long_text_ends_in_an_ellipsis() {
-        assert_eq!(fit("日本語", 210.0, 12.0), "日本語");
-        let long = fit("Ctrl+Shift+R · Ctrl+Shift+S · Ctrl+Shift+M · Ctrl+Shift+X", 120.0, 12.0);
-        assert!(long.ends_with('…'));
-        assert!(long.chars().count() < 25);
-    }
 }

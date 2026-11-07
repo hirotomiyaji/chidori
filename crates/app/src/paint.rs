@@ -342,7 +342,7 @@ impl std::fmt::Debug for Picture {
 impl Picture {
     /// From RGBA pixels; GPUI draws BGRA.
     pub fn from_rgba(width: u32, height: u32, mut rgba: Vec<u8>) -> Option<Self> {
-        for px in rgba.chunks_exact_mut(4) {
+        for px in rgba.as_chunks_mut::<4>().0 {
             px.swap(0, 2);
         }
         let buf = image::RgbaImage::from_raw(width, height, rgba)?;
