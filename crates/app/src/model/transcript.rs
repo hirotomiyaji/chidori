@@ -5,13 +5,13 @@ use std::collections::HashMap;
 use std::path::PathBuf;
 use std::time::{Duration, Instant};
 
+use crate::paint::Picture;
 use chidori_core::events::{MarkerPayload, PartialPayload, ScreenshotPayload};
 use chidori_core::ops::SessionView;
 use chidori_core::session::model::{
     AudioFile, Continuation, Marker, Screenshot, Segment, SourceId, SourceInfo, TimelineItem,
 };
 use chidori_core::session::recovery::Sound;
-use iced::widget::image;
 
 #[derive(Debug, Clone)]
 pub struct PartialLine {
@@ -41,7 +41,7 @@ pub struct Transcript {
     pub items: Vec<TimelineItem>,
     pub partials: HashMap<SourceId, PartialLine>,
     /// Screenshot id → thumbnail (live captures arrive with one).
-    pub thumbs: HashMap<String, image::Handle>,
+    pub thumbs: HashMap<String, Picture>,
     /// Items that arrived live a moment ago; they settle in. Each is forgotten after 1.5 s.
     pub fresh: HashMap<String, Instant>,
     /// Counts changes to the items, so lazily built rows rebuild only when something changed.
@@ -211,11 +211,11 @@ impl Transcript {
 }
 
 /// A live screenshot's thumbnail, sent as a `data:image/...;base64,` URL.
-fn thumb_from_data_url(url: &str) -> Option<image::Handle> {
+fn thumb_from_data_url(url: &str) -> Option<Picture> {
     use base64::Engine as _;
     let (_, b64) = url.split_once(";base64,")?;
     let bytes = base64::engine::general_purpose::STANDARD.decode(b64).ok()?;
     let img = ::image::load_from_memory(&bytes).ok()?.into_rgba8();
     let (w, h) = img.dimensions();
-    Some(image::Handle::from_rgba(w, h, img.into_raw()))
+    Picture::from_rgba(w, h, img.into_raw())
 }

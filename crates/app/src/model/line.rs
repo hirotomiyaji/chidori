@@ -3,8 +3,8 @@
 //! pause leaves a dotted gap. A finished session's line is its whole timeline at once.
 
 use chidori_core::session::model::{SourceId, TimelineItem};
-use iced::Point;
-use iced::widget::canvas::path::Builder;
+
+use crate::paint::{Builder, Point};
 
 use super::format::level_fraction;
 

@@ -177,13 +177,13 @@ last-used source; the screenshot, important-mark and cut hotkeys show 「録音�
 
 ## 6. System architecture
 
-All audio, transcription and file work is in `crates/core`; the Iced UI in `crates/app` renders
+All audio, transcription and file work is in `crates/core`; the GPUI UI in `crates/app` renders
 state and calls the core.
 Each source has its own capture and DSP threads, and exactly one worker owns the Whisper model.
 
 | Thread or task | Owns | Sends to |
 | --- | --- | --- |
-| Main (Iced event loop) | The window, tray, hotkeys, popup menus | Calls into the core (blocking ones on a worker) |
+| Main (GPUI event loop) | The window, tray, hotkeys, popup menus | Calls into the core (blocking ones on a worker) |
 | Capture, one per source | WASAPI client at MMCSS "Pro Audio" priority | Raw chunks (bounded channel, about 2 s) |
 | DSP, one per source | Clock placement, downmix, resampling, VAD, segmenter, level | Jobs to the ASR queue; levels to the UI and `levels.bin` |
 | ASR worker (one) | The Whisper context and one state per source | Post-processing, then the session log and UI |
@@ -196,8 +196,8 @@ nearly fixed (section 8), so merging jobs beats running them in parallel.
 (plus `Vad` for the detector and `AudioDecoder` for files), so the macOS port adds files rather than
 changing the core.
 
-**Stack.** All Rust. Iced 0.14 for the UI, drawn with wgpu on DirectX 12 (tiny-skia only where
-wgpu can't start), with `tray-icon` (and its `muda` popup menus), `global-hotkey`, `rfd` file dialogs and
+**Stack.** All Rust. GPUI (through `gpui-kit`, with `gpui-component`'s text boxes and tooltips)
+for the UI, drawn with DirectX 11, with `tray-icon` (and its `muda` popup menus), `global-hotkey`, `rfd` file dialogs and
 `cpal` for playback; `whisper-rs` (whisper.cpp, quantized GGML models, Vulkan on
 NVIDIA/AMD/Intel); `wasapi` for all three sources (QPC timestamps, session listing, device
 events); `rubato` to 16 kHz; `earshot` for VAD (pure Rust, nothing like ONNX Runtime to ship);
@@ -589,8 +589,7 @@ Most logic is pure and unit-tested without a model or sound card: segmenter, clo
 post-processing, echo guard, job merging, timeline order, exports
 (`insta` snapshots), the event log and recovery, downloads against a mock server, levels and
 folder names. The UI has unit tests for its models and screens' logic, a check that `ja.json` and
-`en.json` have the same keys, and preview tests that draw each screen, light and dark, to PNG
-without opening a window (`crates/app/src/preview.rs`).
+`en.json` have the same keys; screens are checked by running the app.
 
 **Integration harness** (`crates/core/tests/pipeline.rs`, `#[ignore]`d). `FileSource` plays WAV
 fixtures through the real pipeline: a "meeting" of Japanese speech with pauses, and a

@@ -2,7 +2,7 @@
 
 Chidori is a Windows desktop app that transcribes live audio (one app, the whole system, or the
 mic) with local Whisper, drops screenshots into the transcript where they were taken, and exports
-Markdown, PDF and Typst. All Rust: the UI is Iced in `crates/app`, everything else (capture,
+Markdown, PDF and Typst. All Rust: the UI is GPUI (through `gpui-kit`) in `crates/app`, everything else (capture,
 transcription, sessions, models, export) is `crates/core`, whisper.cpp through `whisper-rs`,
 WASAPI capture.
 
@@ -44,9 +44,9 @@ cargo clippy --workspace --all-targets --features chidori/gpu-vulkan -- -D warni
 cargo test --workspace
 ```
 
-To see a screen without opening the app, write a preview test with `crate::preview::{app, shot}`
-(`crates/app/src/preview.rs`) and run it with `cargo test -p chidori <name> -- --ignored
---test-threads 1`: it draws the real view, light and dark, into `<target>/previews/`.
+To check a screen, run the app: GPUI has no headless renderer, so there are no PNG previews.
+`crate::preview::app()` (`crates/app/src/preview.rs`) builds the real `App` on a temporary core
+for tests of a screen's logic.
 
 The streaming accuracy tests in `crates/core/tests/pipeline.rs` are `#[ignore]`d; its header and
 `tests/fixtures/README.md` explain how to build the fixtures and run them. Partial (grey) text
@@ -68,7 +68,7 @@ only runs on the GPU, so its tests need `--features gpu-vulkan`.
 - OS-specific code stays behind the traits in spec section 6 (`AudioSource`, `ScreenCapturer`,
   `AudioAppLister`), so a macOS port only adds files.
 - Library APIs drift: read the current docs (or the crate's source under `~/.cargo/registry`)
-  before using a crate. Drift-prone crates (Iced, the tray and hotkey crates) are pinned with `=`;
+  before using a crate. Drift-prone crates (`gpui-kit`, the tray and hotkey crates) are pinned with `=`;
   the lockfile is committed.
 - Never invent model URLs, SHA-256 hashes or file sizes; take them from the source.
 - rustfmt uses `max_width = 120`. Files are LF (`.gitattributes`).

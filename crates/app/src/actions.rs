@@ -2,11 +2,11 @@
 
 use std::path::PathBuf;
 
+use crate::task::Task;
 use chidori_core::error::{AppError, ErrorCode};
 use chidori_core::events::{Notice, NoticeLevel, UiState};
 use chidori_core::ops::{self, CopyFormat, PdfExport};
 use chidori_core::settings::SourceMode;
-use iced::Task;
 
 use crate::app::{App, Level, Message, SettingsTab, View, call};
 use crate::i18n::{t, t_json, tf};
@@ -90,7 +90,7 @@ pub fn show_notice(app: &mut App, n: Notice) {
 }
 
 /// Runs the action a notice offers.
-pub fn run_notice_action(app: &mut App, command: &str) -> Task<Message> {
+pub fn run_notice_action(app: &mut App, command: &str) -> Task {
     match command {
         "open_mic_privacy" => {
             let _ = open::that_detached("ms-settings:privacy-microphone");
@@ -118,7 +118,7 @@ fn toast_done(r: Result<String, AppError>, fallback: &'static str) -> Message {
 
 /// Transcribes an audio or video file into a new session (FR-18): one dropped on the window, or
 /// one picked in a dialog. The main view follows it as it finishes, then shows it like any session.
-pub fn transcribe_file(app: &mut App, path: Option<PathBuf>) -> Task<Message> {
+pub fn transcribe_file(app: &mut App, path: Option<PathBuf>) -> Task {
     if app.rec.state != UiState::Ready {
         return Task::none();
     }
@@ -211,17 +211,17 @@ fn file_name(path: &std::path::Path) -> String {
     path.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default()
 }
 
-pub fn request_quit(app: &mut App) -> Task<Message> {
+pub fn request_quit(app: &mut App) -> Task {
     if app.rec.busy() {
         // Quitting while recording asks first.
         crate::screens::dialogs::ask_confirm_quit(app);
         return app.on_window_action(crate::app::WinAction::Show);
     }
-    iced::exit()
+    crate::task::exit()
 }
 
 /// A pick in a menu that `actions` itself built (`action:` ids).
-pub fn on_menu(app: &mut App, rest: &str) -> Task<Message> {
+pub fn on_menu(app: &mut App, rest: &str) -> Task {
     let (verb, arg) = rest.split_once(':').unwrap_or((rest, ""));
     let id = (!arg.is_empty()).then(|| arg.to_string());
     match verb {
@@ -251,7 +251,7 @@ pub fn on_menu(app: &mut App, rest: &str) -> Task<Message> {
     }
 }
 
-pub fn run(app: &mut App, action: Action) -> Task<Message> {
+pub fn run(app: &mut App, action: Action) -> Task {
     match action {
         Action::ToggleRecording => match app.rec.state {
             UiState::Recording | UiState::Paused => {

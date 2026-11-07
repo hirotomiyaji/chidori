@@ -12,9 +12,7 @@ use chidori_core::models::catalog::{DEFAULT_MODEL_ID, LIGHT_MODEL_ID};
 use chidori_core::models::manager::ModelEntry;
 use chidori_core::ops;
 use chidori_core::session::model::SourceId;
-use iced::widget::canvas::{self, Frame, LineCap, LineJoin, Path, Stroke};
-use iced::widget::{Column, Row, Space, button, column, container, row};
-use iced::{Alignment, Border, Element, Length, Padding, Point, Rectangle, Renderer, Task, Theme, mouse};
+use gpui_kit::{InteractiveElement, IntoElement, ParentElement, Styled, div, px};
 
 use super::form;
 use super::models::{Bench, description_of, download_progress, name_of};
@@ -25,8 +23,11 @@ use crate::i18n::t;
 use crate::icons::{Icon, icon};
 use crate::model::format::bytes;
 use crate::model::line::{height_of, settle, smooth};
+use crate::paint::{LineCap, LineJoin, Path, Point, Stroke, canvas_el};
+use crate::task::Task;
 use crate::theme::{self, line, p, tokens};
-use crate::widgets::{Size, Variant, btn, btn_icon, hairline, rule, spinner};
+use crate::ui::{El, clickable};
+use crate::widgets::{Size, Variant, btn, btn_icon, col, fill, hairline, row, rule, spinner};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Step {
@@ -128,7 +129,7 @@ pub fn can_next(app: &App) -> bool {
 
 /// On the download step: starts the download, then uses the model once it is here, then measures
 /// it. Runs on entering the step and whenever the model list changes.
-fn drive(app: &mut App) -> Task<Message> {
+fn drive(app: &mut App) -> Task {
     if app.wizard.step() != Step::Download {
         return Task::none();
     }
@@ -154,16 +155,16 @@ fn drive(app: &mut App) -> Task<Message> {
     Task::none()
 }
 
-fn start_download(app: &App, id: String) -> Task<Message> {
+fn start_download(app: &App, id: String) -> Task {
     call(app, move |c| ops::model_download(c, &id), |r| r.err().map_or(Message::Noop, |e| Message::Failed(e, "failed")))
 }
 
-fn go_to(app: &mut App, step: usize) -> Task<Message> {
+fn go_to(app: &mut App, step: usize) -> Task {
     app.wizard.step = step.min(STEPS.len() - 1);
     drive(app)
 }
 
-pub fn update(app: &mut App, m: Msg) -> Task<Message> {
+pub fn update(app: &mut App, m: Msg) -> Task {
     match m {
         Msg::Next => go_to(app, app.wizard.step + 1),
         Msg::Back => go_to(app, app.wizard.step.saturating_sub(1)),
@@ -241,7 +242,7 @@ pub fn on_levels(app: &mut App, levels: &[(SourceId, f32)]) {
 }
 
 /// The chosen model arrived: the list rereads, so the wizard can use and measure it.
-pub fn on_download(app: &mut App, p: &DownloadPayload) -> Task<Message> {
+pub fn on_download(app: &mut App, p: &DownloadPayload) -> Task {
     if !app.needs_wizard() || app.wizard.step() != Step::Download || p.phase != "done" || p.id != chosen_id(app) {
         return Task::none();
     }
@@ -252,33 +253,22 @@ pub fn spinning(app: &App) -> bool {
     app.needs_wizard() && (app.wizard.benching || app.wizard.testing)
 }
 
-pub fn subscription(_app: &App) -> iced::Subscription<Message> {
-    iced::Subscription::none()
-}
-
-pub fn view(app: &App) -> Element<'_, Message> {
+pub fn view(app: &App) -> El {
     let w = &app.wizard;
     let step = w.step();
     let i = w.step.min(STEPS.len() - 1);
-    let bar = Row::with_children((0..STEPS.len()).map(|n| {
+    let mut bar = row().w_full().gap(px(6.0));
+    for n in 0..STEPS.len() {
         let done = n <= i;
-        container(Space::new())
-            .width(Length::Fill)
-            .height(4)
-            .style(move |_| container::Style {
-                background: Some(if done { p().accent } else { p().border }.into()),
-                border: Border { radius: 2.0.into(), ..Border::default() },
-                ..container::Style::default()
-            })
-            .into()
-    }))
-    .spacing(6);
-    let head = column![
-        form::head(t(step.title_key()), Some(format!("{} / {}", i + 1, STEPS.len()))),
-        container(bar).padding(Padding::new(tokens::SPACE_4).top(0).bottom(tokens::SPACE_3)),
-        container(rule()).padding([0.0, tokens::SPACE_3]),
-    ];
-    let body: Element<'_, Message> = match step {
+        bar = bar.child(div().flex_1().h(px(4.0)).rounded(px(2.0)).bg(if done { p().accent } else { p().border }));
+    }
+    let head = col()
+        .w_full()
+        .flex_none()
+        .child(form::head(t(step.title_key()), Some(format!("{} / {}", i + 1, STEPS.len()))))
+        .child(div().w_full().px(px(tokens::SPACE_4)).pb(px(tokens::SPACE_3)).child(bar))
+        .child(div().w_full().px(px(tokens::SPACE_3)).child(rule()));
+    let body: El = match step {
         Step::Welcome => intro(Icon::ShieldCheck, t("wizardWelcomeBody")),
         Step::Model => model_step(app),
         Step::Download => download_step(app),
@@ -286,128 +276,140 @@ pub fn view(app: &App) -> Element<'_, Message> {
         Step::Hotkeys => hotkey_step(app),
         Step::Done => form::para(t("wizardDoneBody")),
     };
-    column![head, form::scroll(container(body).width(Length::Fill).padding([14.0, 18.0])), hairline(), footer(app),]
-        .into()
+    col()
+        .size_full()
+        .child(head)
+        .child(form::scroll(div().w_full().py(px(14.0)).px(px(18.0)).child(body)))
+        .child(hairline())
+        .child(footer(app))
+        .into_any_element()
 }
 
 /// A step's icon over its one line.
-fn intro<'a>(which: Icon, text: String) -> Element<'a, Message> {
-    column![icon(which, 28.0, p().ink), form::para(text)].spacing(tokens::SPACE_3).into()
+fn intro(which: Icon, text: String) -> El {
+    col().gap(px(tokens::SPACE_3)).child(icon(which, 28.0, p().ink)).child(form::para(text)).into_any_element()
 }
 
-fn footer(app: &App) -> Element<'_, Message> {
+fn footer(app: &App) -> El {
     let w = &app.wizard;
-    let back: Element<'_, Message> = if w.step > 0 {
-        btn(t("back"), Variant::Secondary, Size::Md, Some(msg(Msg::Back))).into()
-    } else {
-        Space::new().into()
-    };
-    let mut end = row![].spacing(tokens::SPACE_2).align_y(Alignment::Center);
-    if w.step() == Step::MicTest {
-        end = end.push(btn(t("skip"), Variant::Ghost, Size::Md, Some(msg(Msg::Next))));
+    let mut r = row().w_full().flex_none().px(px(tokens::SPACE_4)).pt(px(10.0)).pb(px(tokens::SPACE_3));
+    if w.step > 0 {
+        r = r.child(btn(t("back"), Variant::Secondary, Size::Md, Some(msg(Msg::Back))));
     }
-    end = end.push(if w.step() == Step::Done {
+    r = r.child(fill());
+    let mut end = row().gap(px(tokens::SPACE_2));
+    if w.step() == Step::MicTest {
+        end = end.child(btn(t("skip"), Variant::Ghost, Size::Md, Some(msg(Msg::Next))));
+    }
+    end = end.child(if w.step() == Step::Done {
         btn(t("wizardFinish"), Variant::Primary, Size::Md, Some(msg(Msg::Finish)))
     } else {
         btn(t("next"), Variant::Primary, Size::Md, can_next(app).then(|| msg(Msg::Next)))
     });
-    container(row![back, Space::new().width(Length::Fill), end].align_y(Alignment::Center))
-        .padding(Padding::new(tokens::SPACE_4).top(10).bottom(tokens::SPACE_3))
-        .into()
+    r.child(end).into_any_element()
 }
 
 /// The visible models as choices, the recommended one picked until another is.
-fn model_step(app: &App) -> Element<'_, Message> {
+fn model_step(app: &App) -> El {
     let id = chosen_id(app);
-    let cards = app.models.iter().filter(|m| !m.entry.hidden || m.installed).map(|m| {
+    let mut cards = col().w_full().gap(px(tokens::SPACE_2));
+    for m in app.models.iter().filter(|m| !m.entry.hidden || m.installed) {
         let on = m.entry.id == id;
-        let mut name = row![theme::t(name_of(m), tokens::LABEL, p().ink)].spacing(6).align_y(Alignment::Center);
+        let mut name = div().flex().flex_wrap().items_center().gap(px(6.0)).child(theme::t(
+            name_of(m).to_string(),
+            tokens::LABEL,
+            p().ink,
+        ));
         if m.recommended {
-            name = name.push(form::tag(t("recommended"), true));
+            name = name.child(form::tag(t("recommended"), true));
         }
         let mut about = format!("{} · {}", description_of(m), bytes(m.entry.size_bytes));
         if m.installed {
             about = format!("{about} · {}", t("installed"));
         }
-        let content = row![
-            container(form::radio_mark(on)).padding(Padding::ZERO.top(3)),
-            column![name.wrap(), theme::t(about, tokens::CAPTION, p().ink_muted)].width(Length::Fill),
-        ]
-        .spacing(10);
-        button(container(content).width(Length::Fill).padding(tokens::SPACE_3))
-            .width(Length::Fill)
-            .padding(0)
-            .on_press(msg(Msg::Choose(m.entry.id.clone())))
-            .style(move |_, status| {
-                let s = form::card_style(on, matches!(status, button::Status::Hovered | button::Status::Pressed));
-                button::Style { background: s.background, border: s.border, ..button::Style::default() }
-            })
-            .into()
-    });
-    Column::with_children(cards).spacing(tokens::SPACE_2).into()
+        let content = div()
+            .flex()
+            .items_start()
+            .gap(px(10.0))
+            .w_full()
+            .child(div().pt(px(3.0)).child(form::radio_mark(on)))
+            .child(col().flex_1().min_w_0().child(name).child(theme::t(about, tokens::CAPTION, p().ink_muted)));
+        let strong = p().border_strong;
+        let mut card =
+            form::card_style(clickable(Some(msg(Msg::Choose(m.entry.id.clone()))), ("model", &m.entry.id)), on)
+                .w_full()
+                .p(px(tokens::SPACE_3))
+                .child(content);
+        if !on {
+            card = card.hover(move |s| s.border_color(strong));
+        }
+        cards = cards.child(card);
+    }
+    cards.into_any_element()
 }
 
-fn download_step(app: &App) -> Element<'_, Message> {
+fn download_step(app: &App) -> El {
     let w = &app.wizard;
     let Some(m) = chosen(app) else { return crate::app::nothing() };
     let p_ = app.models_ui.progress.get(&m.entry.id);
-    let mut col = Column::new().spacing(tokens::SPACE_3).push(theme::t(
+    let mut c = col().w_full().gap(px(tokens::SPACE_3)).child(theme::t(
         format!("{} · {}", name_of(m), bytes(m.entry.size_bytes)),
         tokens::LABEL,
         p().ink,
     ));
     if !m.installed {
         let received = p_.map_or(m.partial_bytes, |p| p.received);
-        col = col.push(download_progress(received, m.entry.size_bytes, p_.map_or(0.0, |p| p.bytes_per_sec)));
+        c = c.child(download_progress(received, m.entry.size_bytes, p_.map_or(0.0, |p| p.bytes_per_sec)));
         if let Some(failed) = p_.filter(|p| p.phase == "error") {
             let checksum = failed.error.as_ref().is_some_and(|e| e.code == ErrorCode::ModelChecksum);
-            col = col.push(
-                row![
-                    theme::t(t(if checksum { "checksumError" } else { "networkError" }), tokens::CAPTION, p().danger),
-                    btn(t("retry"), Variant::Secondary, Size::Sm, Some(msg(Msg::Retry))),
-                ]
-                .spacing(tokens::SPACE_2)
-                .align_y(Alignment::Center),
+            c = c.child(
+                row()
+                    .gap(px(tokens::SPACE_2))
+                    .child(theme::t(
+                        t(if checksum { "checksumError" } else { "networkError" }),
+                        tokens::CAPTION,
+                        p().danger,
+                    ))
+                    .child(btn(t("retry"), Variant::Secondary, Size::Sm, Some(msg(Msg::Retry)))),
             );
         }
-        return col.into();
+        return c.into_any_element();
     }
-    let mut done = Column::new().spacing(tokens::SPACE_1).push(line(
-        format!("✓ {}", t("installed")),
-        tokens::CAPTION,
-        p().success,
-    ));
+    let mut done =
+        col().gap(px(tokens::SPACE_1)).child(line(format!("✓ {}", t("installed")), tokens::CAPTION, p().success));
     if w.benching {
-        done = done.push(
-            row![spinner(13.0, app.now), line(format!("{}…", t("benchmark")), tokens::CAPTION, p().ink_muted)]
-                .spacing(4)
-                .align_y(Alignment::Center),
-        );
+        done = done.child(row().gap(px(4.0)).child(spinner(13.0, app.now)).child(line(
+            format!("{}…", t("benchmark")),
+            tokens::CAPTION,
+            p().ink_muted,
+        )));
     }
     if let Some(b) = &w.bench {
         let b = Bench::from(b);
         let tone = if b.heavy() { p().warning } else { p().success };
-        done = done.push(theme::t(b.text(), tokens::CAPTION, tone));
+        done = done.child(theme::t(b.text(), tokens::CAPTION, tone));
         if b.heavy() && m.entry.id != LIGHT_MODEL_ID {
-            done = done.push(
-                row![
-                    theme::t(t("tierHeavyHint"), tokens::CAPTION, tone),
-                    btn(t("download"), Variant::Secondary, Size::Sm, Some(msg(Msg::UseLight))),
-                ]
-                .spacing(tokens::SPACE_2)
-                .align_y(Alignment::Center),
-            );
+            done =
+                done.child(
+                    row()
+                        .gap(px(tokens::SPACE_2))
+                        .child(theme::t(t("tierHeavyHint"), tokens::CAPTION, tone))
+                        .child(btn(t("download"), Variant::Secondary, Size::Sm, Some(msg(Msg::UseLight)))),
+                );
         }
     }
-    col.push(done).into()
+    c.child(done).into_any_element()
 }
 
-fn mic_step(app: &App) -> Element<'_, Message> {
+fn mic_step(app: &App) -> El {
     let w = &app.wizard;
     // Secondary: 次へ is the step's one primary.
     let test = if w.testing {
         crate::widgets::btn_with(
-            row![spinner(14.0, app.now), theme::plain(t("wizardMicListening"), tokens::LABEL)].spacing(6),
+            row()
+                .gap(px(6.0))
+                .child(spinner(14.0, app.now))
+                .child(theme::plain(t("wizardMicListening"), tokens::LABEL)),
             Variant::Secondary,
             Size::Md,
             None,
@@ -415,41 +417,44 @@ fn mic_step(app: &App) -> Element<'_, Message> {
     } else {
         btn_icon(Icon::Mic, t("wizardMicStart"), Variant::Secondary, Size::Md, Some(msg(Msg::MicTest)))
     };
-    let mut col = column![
-        icon(Icon::Mic, 28.0, p().ink),
-        form::para(t("wizardMicTestBody")),
-        row![test, wave(app)].spacing(tokens::SPACE_3).align_y(Alignment::Center),
-    ]
-    .spacing(tokens::SPACE_3);
+    let mut c = col()
+        .w_full()
+        .gap(px(tokens::SPACE_3))
+        .child(icon(Icon::Mic, 28.0, p().ink))
+        .child(form::para(t("wizardMicTestBody")))
+        .child(row().gap(px(tokens::SPACE_3)).child(test).child(wave(app)));
     if let Some(mic) = &w.mic {
-        let mut result = Column::new();
+        let mut result = col();
         if let Some(device) = &mic.device {
-            result = result
-                .push(line(device.clone(), tokens::CAPTION, p().ink_muted))
-                .push(Space::new().height(tokens::SPACE_1));
+            result = result.child(line(device.clone(), tokens::CAPTION, p().ink_muted).pb(px(tokens::SPACE_1)));
         }
         if mic.text.is_empty() {
-            result = result.push(theme::t(t("wizardMicNothing"), tokens::CAPTION, p().ink_muted));
+            result = result.child(theme::t(t("wizardMicNothing"), tokens::CAPTION, p().ink_muted));
         } else {
-            result = result.push(line(t("wizardMicResult"), tokens::CAPTION, p().ink_muted)).push(theme::t(
+            result = result.child(line(t("wizardMicResult"), tokens::CAPTION, p().ink_muted)).child(theme::t(
                 mic.text.clone(),
                 tokens::BODY_SMALL,
                 p().ink,
             ));
         }
-        col = col.push(form::card(result, false));
+        c = c.child(form::card(result, false));
     }
-    col.into()
+    c.into_any_element()
 }
 
-fn hotkey_step(app: &App) -> Element<'_, Message> {
-    column![
-        icon(Icon::Keyboard, 28.0, p().ink),
-        form::para(t("wizardHotkeysBody")),
-        column![settings::hotkey_input(app, Hotkey::Toggle), settings::hotkey_input(app, Hotkey::Screenshot)],
-    ]
-    .spacing(tokens::SPACE_3)
-    .into()
+fn hotkey_step(app: &App) -> El {
+    col()
+        .w_full()
+        .gap(px(tokens::SPACE_3))
+        .child(icon(Icon::Keyboard, 28.0, p().ink))
+        .child(form::para(t("wizardHotkeysBody")))
+        .child(
+            col()
+                .w_full()
+                .child(settings::hotkey_input(app, Hotkey::Toggle))
+                .child(settings::hotkey_input(app, Hotkey::Screenshot)),
+        )
+        .into_any_element()
 }
 
 const WAVE_W: f32 = 200.0;
@@ -461,13 +466,6 @@ const START_X: f32 = 6.0;
 const END_PAD: f32 = 8.0;
 /// How far the line not written yet takes to come back down to the baseline.
 const SLOPE: f32 = 12.0;
-
-struct WaveProgram<'a> {
-    samples: &'a [f32],
-    /// How far the pen has moved past the newest step, 0..1.
-    frac: f32,
-    active: bool,
-}
 
 /// Where the pen is and the written line's points, for samples in a box `WAVE_W` wide. The pen
 /// moves right until it is `END_PAD` from the end; after that the line scrolls under it.
@@ -493,18 +491,13 @@ fn wave_points(samples: &[f32], frac: f32) -> (Vec<Point>, Point) {
     (pts, pen)
 }
 
-impl canvas::Program<Message> for WaveProgram<'_> {
-    type State = ();
-
-    fn draw(
-        &self,
-        _: &(),
-        renderer: &Renderer,
-        _: &Theme,
-        bounds: Rectangle,
-        _: mouse::Cursor,
-    ) -> Vec<canvas::Geometry> {
-        let mut frame = Frame::new(renderer, bounds.size());
+fn wave(app: &App) -> El {
+    let w = &app.wizard;
+    let frac = w.wave.at.map_or(0.0, |at| (app.now.saturating_duration_since(at).as_secs_f32() / 0.1).clamp(0.0, 1.0));
+    let samples: Vec<f32> = if w.testing { w.wave.samples.iter().copied().collect() } else { Vec::new() };
+    let frac = if w.testing { frac } else { 0.0 };
+    let active = w.testing;
+    canvas_el(None, move |frame| {
         let stroke = |c| {
             Stroke::default()
                 .with_color(c)
@@ -512,7 +505,7 @@ impl canvas::Program<Message> for WaveProgram<'_> {
                 .with_line_cap(LineCap::Round)
                 .with_line_join(LineJoin::Round)
         };
-        let (pts, pen) = wave_points(self.samples, self.frac);
+        let (pts, pen) = wave_points(&samples, frac);
         let ahead = Path::new(|b| {
             b.move_to(pen);
             if BASE - pen.y >= 0.5 {
@@ -529,17 +522,12 @@ impl canvas::Program<Message> for WaveProgram<'_> {
         if pts.len() > 1 {
             frame.stroke(&Path::new(|b| smooth(b, &pts, false)), stroke(p().accent));
         }
-        frame.fill(&Path::circle(pen, if self.active { 3.5 } else { 5.0 }), p().accent);
-        vec![frame.into_geometry()]
-    }
-}
-
-fn wave(app: &App) -> Element<'_, Message> {
-    let w = &app.wizard;
-    let frac = w.wave.at.map_or(0.0, |at| (app.now.saturating_duration_since(at).as_secs_f32() / 0.1).clamp(0.0, 1.0));
-    let samples: &[f32] = if w.testing { &w.wave.samples } else { &[] };
-    let program = WaveProgram { samples, frac: if w.testing { frac } else { 0.0 }, active: w.testing };
-    canvas::Canvas::new(program).width(WAVE_W).height(WAVE_H).into()
+        frame.fill(&Path::circle(pen, if active { 3.5 } else { 5.0 }), p().accent);
+    })
+    .flex_none()
+    .w(px(WAVE_W))
+    .h(px(WAVE_H))
+    .into_any_element()
 }
 
 #[cfg(test)]
@@ -612,84 +600,5 @@ mod tests {
         let long = vec![0.5; 400];
         let (_, pen) = wave_points(&long, 1.0);
         assert!((pen.x - (WAVE_W - END_PAD)).abs() < 1e-3);
-    }
-}
-
-#[cfg(test)]
-mod previews {
-    use chidori_core::models::benchmark::Tier;
-
-    use super::*;
-    use crate::preview::{app, shot};
-
-    fn at(step: usize) -> (App, tempfile::TempDir) {
-        let (mut app, dir) = app();
-        app.info.setup_done = false;
-        app.info.recommended_model = "turbo-q5".into();
-        app.models = chidori_core::models::catalog::all()
-            .iter()
-            .map(|e| ModelEntry {
-                entry: e.clone(),
-                installed: false,
-                selected: false,
-                recommended: e.id == "turbo-q5",
-                partial_bytes: 0,
-                downloading: false,
-                benchmark: None,
-            })
-            .collect();
-        app.wizard.step = step;
-        (app, dir)
-    }
-
-    #[test]
-    #[ignore = "writes PNGs for review"]
-    fn preview_wizard() {
-        let (app, _dir) = at(0);
-        shot(&app, "wizard-welcome", crate::app::EXPANDED);
-
-        let (app, _dir) = at(1);
-        shot(&app, "wizard-model", crate::app::EXPANDED);
-
-        let (mut app, _dir) = at(2);
-        let size = app.models[0].entry.size_bytes;
-        app.models_ui.progress.insert(
-            "turbo-q5".into(),
-            DownloadPayload {
-                id: "turbo-q5".into(),
-                received: size / 2,
-                total: size,
-                bytes_per_sec: 6.1e6,
-                phase: "downloading",
-                error: None,
-            },
-        );
-        shot(&app, "wizard-download", crate::app::EXPANDED);
-
-        let (mut app, _dir) = at(2);
-        app.models[0].installed = true;
-        app.models[0].selected = true;
-        app.wizard.bench = Some(BenchmarkResult { seconds: 14.2, tier: Tier::Heavy, gpu: false, text: String::new() });
-        shot(&app, "wizard-download-heavy", crate::app::EXPANDED);
-
-        let (mut app, _dir) = at(3);
-        app.wizard.testing = true;
-        for i in 0..60 {
-            let level = if (i / 8) % 2 == 0 { -14.0 } else { -50.0 };
-            on_levels(&mut app, &[(SourceId::Mic, level)]);
-        }
-        app.now = app.wizard.wave.at.unwrap();
-        shot(&app, "wizard-mic-listening", crate::app::EXPANDED);
-        app.wizard.testing = false;
-        app.wizard.mic =
-            Some(MicTestResult { peak_dbfs: -12.0, text: "テスト中です".into(), device: Some("USB Mic".into()) });
-        shot(&app, "wizard-mic-result", crate::app::EXPANDED);
-
-        let (mut app, _dir) = at(4);
-        app.settings.hotkeys.toggle = "Ctrl+Shift+R".into();
-        shot(&app, "wizard-hotkeys", crate::app::EXPANDED);
-
-        let (app, _dir) = at(5);
-        shot(&app, "wizard-done", crate::app::EXPANDED);
     }
 }

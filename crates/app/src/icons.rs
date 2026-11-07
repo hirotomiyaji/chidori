@@ -1,9 +1,14 @@
-//! The UI's icons: Lucide's, as the React UI drew them (`brand/icons/`, ISC licence), tinted at draw time.
+//! The UI's icons: Lucide's, as the React UI drew them (`brand/icons/`, ISC licence), tinted at draw
+//! time, and Chidori's kamon.
 
-use std::sync::LazyLock;
+use std::borrow::Cow;
+use std::sync::{Arc, LazyLock};
 
-use iced::widget::svg::{self, Handle, Svg};
-use iced::{Color, Length};
+use gpui_kit::{
+    AssetSource, Image, ImageFormat, IntoElement, Radians, SharedString, Styled, Svg, Transformation, img, px, svg,
+};
+
+use crate::theme::Color;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum Icon {
@@ -53,13 +58,14 @@ pub enum Icon {
     X,
 }
 
-macro_rules! handles {
+macro_rules! files {
     ($($name:literal),*) => {
-        [$(LazyLock::new(|| Handle::from_memory(include_bytes!(concat!("../brand/icons/", $name, ".svg")).as_slice()))),*]
+        [$(($name, include_bytes!(concat!("../brand/icons/", $name, ".svg")).as_slice())),*]
     };
 }
 
-static HANDLES: [LazyLock<Handle>; 44] = handles!(
+/// Each icon's file name and drawing, in the order of `Icon`.
+static FILES: [(&str, &[u8]); 44] = files!(
     "app-window",
     "arrow-down",
     "arrow-left",
@@ -106,35 +112,57 @@ static HANDLES: [LazyLock<Handle>; 44] = handles!(
     "x"
 );
 
+const PREFIX: &str = "chidori/icons/";
+
+/// The app's icons for GPUI, and GPUI Kit's own for its components.
+pub struct Assets;
+
+impl AssetSource for Assets {
+    fn load(&self, path: &str) -> gpui_kit::Result<Option<Cow<'static, [u8]>>> {
+        if let Some(name) = path.strip_prefix(PREFIX).and_then(|p| p.strip_suffix(".svg")) {
+            return Ok(FILES.iter().find(|(n, _)| *n == name).map(|(_, b)| Cow::Borrowed(*b)));
+        }
+        gpui_kit::assets::Assets.load(path)
+    }
+
+    fn list(&self, path: &str) -> gpui_kit::Result<Vec<SharedString>> {
+        gpui_kit::assets::Assets.list(path)
+    }
+}
+
+fn path_of(which: Icon) -> SharedString {
+    format!("{PREFIX}{}.svg", FILES[which as usize].0).into()
+}
+
 /// An icon at a size, in one colour.
-pub fn icon<'a>(which: Icon, size: f32, color: Color) -> Svg<'a> {
-    svg(which)
-        .width(Length::Fixed(size))
-        .height(Length::Fixed(size))
-        .style(move |_, _| svg::Style { color: Some(color) })
+pub fn icon(which: Icon, size: f32, color: Color) -> Svg {
+    svg().path(path_of(which)).flex_none().size(px(size)).text_color(color)
 }
 
-fn svg<'a>(which: Icon) -> Svg<'a> {
-    Svg::new((*HANDLES[which as usize]).clone())
+/// An icon turned by `turn` (0..1 of a full turn).
+pub fn turned(which: Icon, size: f32, color: Color, turn: f32) -> Svg {
+    icon(which, size, color).with_transformation(Transformation::rotate(Radians(turn * std::f32::consts::TAU)))
 }
 
-static LOGO_SMALL: LazyLock<Handle> =
-    LazyLock::new(|| Handle::from_memory(include_bytes!("../brand/logo/chidori-small.svg").as_slice()));
-static LOGO_SMALL_DARK: LazyLock<Handle> =
-    LazyLock::new(|| Handle::from_memory(include_bytes!("../brand/logo/chidori-small-on-dark.svg").as_slice()));
-static LOGO: LazyLock<Handle> =
-    LazyLock::new(|| Handle::from_memory(include_bytes!("../brand/logo/chidori.svg").as_slice()));
-static LOGO_DARK: LazyLock<Handle> =
-    LazyLock::new(|| Handle::from_memory(include_bytes!("../brand/logo/chidori-on-dark.svg").as_slice()));
+macro_rules! logo_image {
+    ($file:literal) => {
+        LazyLock::new(|| Arc::new(Image::from_bytes(ImageFormat::Svg, include_bytes!($file).to_vec())))
+    };
+}
+
+static LOGO_SMALL: LazyLock<Arc<Image>> = logo_image!("../brand/logo/chidori-small.svg");
+static LOGO_SMALL_DARK: LazyLock<Arc<Image>> = logo_image!("../brand/logo/chidori-small-on-dark.svg");
+static LOGO: LazyLock<Arc<Image>> = logo_image!("../brand/logo/chidori.svg");
+static LOGO_DARK: LazyLock<Arc<Image>> = logo_image!("../brand/logo/chidori-on-dark.svg");
 
 /// Chidori's kamon, in its own colours: the small drawing below 32 px, the dark one in dark mode.
-pub fn logo<'a>(size: f32) -> Svg<'a> {
+pub fn logo(size: f32) -> impl IntoElement {
     let dark = crate::theme::is_dark();
-    let handle = match (size < 32.0, dark) {
+    let image = match (size < 32.0, dark) {
         (true, false) => &*LOGO_SMALL,
         (true, true) => &*LOGO_SMALL_DARK,
         (false, false) => &*LOGO,
         (false, true) => &*LOGO_DARK,
     };
-    Svg::new(handle.clone()).width(Length::Fixed(size)).height(Length::Fixed(size))
+    img(image.clone()).flex_none().size(px(size))
 }

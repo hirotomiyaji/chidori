@@ -5,16 +5,17 @@
 
 use chidori_core::events::UiState;
 use chidori_core::settings::{Layout, SourceMode};
-use iced::widget::{Space, container, mouse_area, row};
-use iced::{Alignment, Border, Element, Length, Padding, Task};
+use gpui_kit::{InteractiveElement, IntoElement, ParentElement, Styled, WindowControlArea, div, px};
 
 use crate::app::{App, Message, Place, SettingsTab, View, WinAction};
 use crate::i18n::t;
 use crate::icons::{Icon, icon};
 use crate::model::format::sources_text;
 use crate::native::menu::Item;
-use crate::theme::{self, line, p, tokens};
-use crate::widgets::{Size, bare, divider, icon_button, icon_button_tinted, with_tip};
+use crate::task::Task;
+use crate::theme::{Ink, line, p, tokens};
+use crate::ui::{El, clickable};
+use crate::widgets::{Size, bare, divider, icon_button, icon_button_tinted, row, with_tip};
 
 #[derive(Debug, Clone)]
 pub enum Msg {
@@ -37,7 +38,7 @@ fn back_of(app: &App) -> Option<Msg> {
     }
 }
 
-pub fn update(app: &mut App, msg: Msg) -> Task<Message> {
+pub fn update(app: &mut App, msg: Msg) -> Task {
     match msg {
         Msg::Back => match app.view {
             View::Session => Task::done(Message::Go(View::History)),
@@ -82,7 +83,7 @@ fn source_menu(app: &App) -> Vec<Item> {
 }
 
 /// A pick in the source menu changes the choice; the main view turns it into a switch.
-pub fn on_menu(app: &mut App, rest: &str) -> Task<Message> {
+pub fn on_menu(app: &mut App, rest: &str) -> Task {
     let s = &mut app.source;
     match rest.split_once(':') {
         Some(("src-app", pid)) => {
@@ -103,7 +104,7 @@ pub fn on_menu(app: &mut App, rest: &str) -> Task<Message> {
 
 /// What is recording, in place of the name while a recording runs: a mark in the accent (grey
 /// while paused or finishing), the state and the source.
-fn live_tag(app: &App) -> Element<'_, Message> {
+fn live_tag(app: &App) -> El {
     let state = app.rec.state;
     let quiet = matches!(state, UiState::Paused | UiState::Finishing);
     let from_file =
@@ -114,39 +115,41 @@ fn live_tag(app: &App) -> Element<'_, Message> {
         _ => t("recording"),
     };
     let sources = sources_text(app.rec.sources.as_ref());
-    let mark = container(Space::new()).width(8).height(8).style(move |_| container::Style {
-        background: Some(if quiet { p().border_strong } else { p().accent }.into()),
-        border: Border { radius: 2.0.into(), ..Border::default() },
-        ..container::Style::default()
-    });
-    let mut body = row![mark, line(label, tokens::CAPTION, p().ink).font(theme::SANS_MEDIUM)]
-        .spacing(tokens::SPACE_2)
-        .align_y(Alignment::Center);
+    let mark = div().flex_none().size(px(8.0)).rounded(px(2.0)).bg(if quiet { p().border_strong } else { p().accent });
+    let mut body = row()
+        .gap(px(tokens::SPACE_2))
+        .px(px(4.0))
+        .py(px(2.0))
+        .overflow_hidden()
+        .child(mark)
+        .child(line(label, tokens::CAPTION, p().ink).medium().flex_none());
     if !sources.is_empty() {
-        body = body.push(container(line(sources.clone(), tokens::CAPTION, p().ink_muted)).clip(true));
+        body = body.child(line(sources.clone(), tokens::CAPTION, p().ink_muted).min_w_0());
     }
-    let body = container(body).padding([2.0, 4.0]).clip(true);
     if app.view == View::Main && app.compact() && state != UiState::Finishing {
-        return with_tip(bare(body, Some(Message::Titlebar(Msg::SourceMenu)), true), t("switchSource"));
+        return with_tip(bare(body, Some(Message::Titlebar(Msg::SourceMenu)), true), t("switchSource"))
+            .min_w_0()
+            .into_any_element();
     }
     if app.view == View::Main {
         // The title bar may be too narrow for the source: it shows on hover.
-        return with_tip(body, sources);
+        return with_tip(body, sources).min_w_0().into_any_element();
     }
-    with_tip(bare(body, Some(Message::Go(View::Main)), true), t("backToLive"))
+    with_tip(bare(body, Some(Message::Go(View::Main)), true), t("backToLive")).min_w_0().into_any_element()
 }
 
 /// The name, with the app's kamon as a window's icon sits beside its title.
-fn brand<'a>() -> Element<'a, Message> {
-    row![crate::icons::logo(18.0), line("Chidori", tokens::BODY_SMALL, p().ink).font(theme::SANS_MEDIUM)]
-        .spacing(tokens::SPACE_2)
-        .align_y(Alignment::Center)
-        .into()
+fn brand() -> El {
+    row()
+        .gap(px(tokens::SPACE_2))
+        .child(crate::icons::logo(18.0))
+        .child(line("Chidori", tokens::BODY_SMALL, p().ink).medium())
+        .into_any_element()
 }
 
 /// 録音 · 履歴 · 設定 as words; the current place is in the accent's tint, and 録音 carries a mark
 /// while recording.
-fn places(app: &App) -> Element<'_, Message> {
+fn places(app: &App) -> El {
     let busy = app.rec.busy();
     let current = app.view.place();
     let entries = [
@@ -154,100 +157,83 @@ fn places(app: &App) -> Element<'_, Message> {
         (Place::History, t("history"), View::History),
         (Place::Settings, t("settings"), View::Settings),
     ];
-    let mut r = row![].align_y(Alignment::Center);
+    let mut r = row().flex_none();
     for (place, label, view) in entries {
         let here = place == current;
-        let mut content = row![].spacing(6).align_y(Alignment::Center);
+        let mut content = row().gap(px(6.0)).px(px(7.0)).py(px(3.0));
         if place == Place::Main && busy {
-            content = content.push(container(Space::new()).width(6).height(6).style(|_| container::Style {
-                background: Some(p().accent.into()),
-                border: Border { radius: 2.0.into(), ..Border::default() },
-                ..container::Style::default()
-            }));
+            content = content.child(div().flex_none().size(px(6.0)).rounded(px(2.0)).bg(p().accent));
         }
         let color = if here { p().accent_deep } else { p().ink_muted };
-        content = content.push(line(label, tokens::BODY_SMALL, color).font(theme::SANS_MEDIUM));
-        let b = iced::widget::button(container(content).padding([3.0, 7.0]))
-            .padding(0)
-            .style(move |_, status| iced::widget::button::Style {
-                background: if here {
-                    Some(p().accent_tint.into())
-                } else if matches!(status, iced::widget::button::Status::Hovered) {
-                    Some(p().surface_sunken.into())
-                } else {
-                    None
-                },
-                border: Border { radius: tokens::RADIUS_SM.into(), ..Border::default() },
-                ..iced::widget::button::Style::default()
-            })
-            .on_press(Message::Go(view));
+        content = content.child(line(label, tokens::BODY_SMALL, color).medium());
+        let mut b = clickable(Some(Message::Go(view)), "place").rounded(px(tokens::RADIUS_SM)).child(content);
+        if here {
+            b = b.bg(p().accent_tint);
+        } else {
+            let sunk = p().surface_sunken;
+            b = b.hover(move |s| s.bg(sunk));
+        }
         let tip = if place == Place::Main && busy && !here { t("backToLive") } else { String::new() };
-        r = r.push(with_tip(b, tip));
+        r = r.child(with_tip(b, tip));
     }
-    r.into()
+    r.into_any_element()
 }
 
-fn window_buttons(app: &App, layout_toggle: bool) -> Element<'_, Message> {
+fn window_buttons(app: &App, layout_toggle: bool) -> El {
     let on_top = app.settings.window.always_on_top;
     let compact = app.view == View::Main && app.layout() == Layout::Compact;
-    let mut r = row![icon_button_tinted(
+    let mut r = row().flex_none().child(icon_button_tinted(
         Icon::Pin,
         t("alwaysOnTop"),
         Size::Sm,
         Some(Message::Win(WinAction::ToggleOnTop)),
         on_top.then(|| p().ink),
-    )]
-    .align_y(Alignment::Center);
+    ));
     if layout_toggle {
         let (glyph, label) = if compact { (Icon::Maximize, t("expand")) } else { (Icon::Minimize, t("shrink")) };
-        r = r.push(icon_button(glyph, label, Size::Sm, Some(Message::Win(WinAction::ToggleLayout))));
+        r = r.child(icon_button(glyph, label, Size::Sm, Some(Message::Win(WinAction::ToggleLayout))));
     }
-    r.push(icon_button(Icon::Minus, t("minimize"), Size::Sm, Some(Message::Win(WinAction::Minimize))))
-        .push(close_button())
-        .into()
+    r.child(icon_button(Icon::Minus, t("minimize"), Size::Sm, Some(Message::Win(WinAction::Minimize))))
+        .child(close_button())
+        .into_any_element()
 }
 
 /// Close turns brick on hover, like the system's own.
-fn close_button<'a>() -> Element<'a, Message> {
-    let b = iced::widget::button(
-        container(icon(Icon::X, 15.0, iced::Color::BLACK).style(|_, status| iced::widget::svg::Style {
-            color: Some(if status == iced::widget::svg::Status::Hovered { p().surface } else { p().ink_muted }),
-        }))
-        .center(28),
-    )
-    .width(28)
-    .height(28)
-    .padding(0)
-    .style(|_, status| iced::widget::button::Style {
-        background: matches!(status, iced::widget::button::Status::Hovered | iced::widget::button::Status::Pressed)
-            .then(|| p().danger.into()),
-        border: Border { radius: tokens::RADIUS_MD.into(), ..Border::default() },
-        ..iced::widget::button::Style::default()
-    })
-    .on_press(Message::Win(WinAction::Close));
-    with_tip(b, t("close"))
+fn close_button() -> El {
+    let surface = p().surface;
+    let danger = p().danger;
+    let b = clickable(Some(Message::Win(WinAction::Close)), "close")
+        .group("close")
+        .flex()
+        .items_center()
+        .justify_center()
+        .size(px(28.0))
+        .rounded(px(tokens::RADIUS_MD))
+        .hover(move |s| s.bg(danger))
+        .child(icon(Icon::X, 15.0, p().ink_muted).group_hover("close", move |s| s.text_color(surface)));
+    with_tip(b, t("close")).into_any_element()
 }
 
-pub fn view(app: &App) -> Element<'_, Message> {
+pub fn view(app: &App) -> El {
     let setup = app.needs_wizard();
     let compact = app.compact();
-    let mut bar = row![].spacing(4).align_y(Alignment::Center).height(40).padding(Padding::ZERO.left(12).right(6));
+    let mut bar = row().flex_none().gap(px(4.0)).h(px(40.0)).pl(px(12.0)).pr(px(6.0));
     if back_of(app).is_some() {
-        bar = bar.push(icon_button(Icon::ArrowLeft, t("back"), Size::Sm, Some(Message::Titlebar(Msg::Back))));
+        bar = bar.child(icon_button(Icon::ArrowLeft, t("back"), Size::Sm, Some(Message::Titlebar(Msg::Back))));
     }
-    let lead: Element<'_, Message> = if app.rec.busy() { live_tag(app) } else { brand() };
-    // The empty part of the bar drags the window.
-    bar = bar.push(mouse_area(container(lead).width(Length::Fill).clip(true)).on_press(Message::Win(WinAction::Drag)));
+    let lead: El = if app.rec.busy() { live_tag(app) } else { brand() };
+    bar = bar.child(row().flex_1().min_w_0().overflow_hidden().child(lead));
     if !setup {
         if compact {
             bar = bar
-                .push(icon_button(Icon::History, t("history"), Size::Sm, Some(Message::Go(View::History))))
-                .push(icon_button(Icon::Settings, t("settings"), Size::Sm, Some(Message::Go(View::Settings))));
+                .child(icon_button(Icon::History, t("history"), Size::Sm, Some(Message::Go(View::History))))
+                .child(icon_button(Icon::Settings, t("settings"), Size::Sm, Some(Message::Go(View::Settings))));
         } else {
-            bar = bar.push(places(app));
+            bar = bar.child(places(app));
         }
-        bar = bar.push(container(divider()).padding([0, 4]));
+        bar = bar.child(div().px(px(4.0)).child(divider()));
     }
-    bar = bar.push(window_buttons(app, !setup));
-    mouse_area(bar).on_press(Message::Win(WinAction::Drag)).into()
+    bar = bar.child(window_buttons(app, !setup));
+    // Where nothing else takes the pointer, the bar moves the window (Windows' own caption drag).
+    bar.id("titlebar").window_control_area(WindowControlArea::Drag).into_any_element()
 }

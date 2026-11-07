@@ -29,8 +29,7 @@ use chidori_core::events::UiState;
 use chidori_core::ops;
 use chidori_core::screenshot::WindowInfo;
 use chidori_core::settings::{Settings, SourceMode};
-use iced::widget::{Space, column, container, stack};
-use iced::{Element, Length, Padding, Task};
+use gpui_kit::{IntoElement, ParentElement, Styled, div, px};
 
 use self::deck::{DeckAnim, DeckCtx, DeckMsg, DeckState};
 use self::playback::{Player, Status};
@@ -40,7 +39,10 @@ use crate::app::{App, Level, Message, View, call};
 use crate::i18n::t;
 use crate::model::source::ChosenApp;
 use crate::screens::notices;
-use crate::theme::{self, line, p, tokens};
+use crate::task::Task;
+use crate::theme::{Ink, line, p, tokens};
+use crate::ui::{El, KeyPress, Ui};
+use crate::widgets::col;
 
 /// What the main view shows: nothing yet, a recording, or the session that just finished.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -124,7 +126,7 @@ impl Default for State {
     fn default() -> Self {
         Self {
             picker: PickerState::default(),
-            list: ListState::new("main-transcript", "main-editor", "main-title"),
+            list: ListState::new("main"),
             deck: DeckAnim::default(),
             player: Player::default(),
             playing_ms: None,
@@ -159,7 +161,7 @@ fn wrap_deck(m: DeckMsg) -> Message {
     Message::Main(Msg::Deck(m))
 }
 
-pub fn update(app: &mut App, msg: Msg) -> Task<Message> {
+pub fn update(app: &mut App, msg: Msg) -> Task {
     match msg {
         Msg::Pick(m) => {
             let task = source_picker::update(app, m);
@@ -173,15 +175,7 @@ pub fn update(app: &mut App, msg: Msg) -> Task<Message> {
         Msg::List(m) => {
             let core = app.core.clone();
             let ph = phase(app);
-            transcript::update(
-                &core,
-                &mut app.main.list,
-                &mut app.live,
-                m,
-                wrap_list,
-                ph == Phase::Live,
-                ph == Phase::Review,
-            )
+            transcript::update(&core, &mut app.main.list, &mut app.live, m, wrap_list, ph == Phase::Review)
         }
         Msg::Deck(DeckMsg::Seek(ms)) => update(app, Msg::List(ListMsg::Seek(ms))),
         Msg::Deck(DeckMsg::Play) => {
@@ -235,7 +229,7 @@ pub fn update(app: &mut App, msg: Msg) -> Task<Message> {
 
 /// A pick in the camera's menu: one of the three targets (the setting itself, remembered), or a
 /// window for the rest of this recording (FR-34).
-pub fn on_menu(app: &mut App, rest: &str) -> Task<Message> {
+pub fn on_menu(app: &mut App, rest: &str) -> Task {
     if let Some(target) = rest.strip_prefix("shot-target:") {
         let picked = app.rec.shot_window.is_some();
         let current = serde_json::to_value(app.settings.screenshot.target).ok();
@@ -269,7 +263,7 @@ pub fn on_menu(app: &mut App, rest: &str) -> Task<Message> {
 
 /// The source choice changed (a menu pick): while recording it becomes a switch (FR-17); if the
 /// new source cannot start, the recording keeps the old one and the choice goes back to it.
-pub fn source_changed(app: &mut App) -> Task<Message> {
+pub fn source_changed(app: &mut App) -> Task {
     if !matches!(app.rec.state, UiState::Recording | UiState::Paused) {
         return Task::none();
     }
@@ -285,7 +279,7 @@ pub fn source_changed(app: &mut App) -> Task<Message> {
 }
 
 /// The apps whose sound is on screen.
-fn sync_watch(app: &mut App) -> Task<Message> {
+fn sync_watch(app: &mut App) -> Task {
     let ph = phase(app);
     let shown = app.view == View::Main && !app.hidden && (ph == Phase::Start || (ph == Phase::Live && !app.compact()));
     let pids = if shown { source_picker::shown_pids(app) } else { Vec::new() };
@@ -317,7 +311,7 @@ fn toggle_play(app: &mut App) {
 }
 
 /// Four times a second while playing: where the sound is, and the transcript keeping up with it.
-fn play_tick(app: &mut App) -> Task<Message> {
+fn play_tick(app: &mut App) -> Task {
     // Leaving the session (or the review) stops it and lets go of the file.
     if app.view != View::Main || phase(app) != Phase::Review {
         app.main.player.stop();
@@ -338,7 +332,7 @@ fn play_tick(app: &mut App) -> Task<Message> {
     app.main.list.follow_playing(&app.live, true, key)
 }
 
-pub fn tick(app: &mut App) -> Task<Message> {
+pub fn tick(app: &mut App) -> Task {
     let mut tasks = vec![sync_watch(app)];
     if app.view != View::Main {
         app.main.deck.forget();
@@ -363,13 +357,7 @@ pub fn tick(app: &mut App) -> Task<Message> {
     if app.view == View::Main && app.main.last_phase != Some(ph) {
         let was = app.main.last_phase.replace(ph);
         match ph {
-            Phase::Review if was.is_some() => {
-                app.main.list.stay();
-                tasks.push(iced::widget::operation::snap_to(
-                    app.main.list.id.clone(),
-                    iced::widget::operation::RelativeOffset::START,
-                ));
-            }
+            Phase::Review if was.is_some() => app.main.list.stay(),
             Phase::Live => app.main.list.forget(),
             _ => {}
         }
@@ -408,30 +396,41 @@ pub fn spinning(app: &App) -> bool {
             && app.rec.engine.as_ref().is_some_and(|e| e.state == chidori_core::asr::worker::EngineState::Loading))
 }
 
-/// Escape closes what is open; while playing, the playhead steps four times a second; a row
-/// marked from the session's line loses its mark.
-pub fn subscription(app: &App) -> iced::Subscription<Message> {
+/// Keeps the list and the deck fresh for when the view shows again.
+pub fn housekeeping(app: &App) {
     if app.view != View::Main {
         app.main.deck.forget();
         app.main.list.forget();
     }
-    let mut subs = vec![iced::keyboard::listen().filter_map(|e| match e {
-        iced::keyboard::Event::KeyPressed {
-            key: iced::keyboard::Key::Named(iced::keyboard::key::Named::Escape),
-            ..
-        } => Some(Message::Main(Msg::Escape)),
-        _ => None,
-    })];
-    if app.main.player.playing() && !app.hidden {
-        subs.push(iced::time::every(Duration::from_millis(250)).map(|_| Message::Main(Msg::PlayTick)));
-    }
-    if app.main.list.marked.is_some() {
-        subs.push(iced::time::every(transcript::MARK_FOR).map(|_| Message::Main(Msg::List(ListMsg::Unmark))));
-    }
-    iced::Subscription::batch(subs)
 }
 
-pub fn view(app: &App) -> Element<'_, Message> {
+/// Escape closes what is open.
+pub fn on_key(app: &App, key: &KeyPress) -> Option<Message> {
+    (app.view == View::Main && key.code == "Escape").then_some(Message::Main(Msg::Escape))
+}
+
+/// While playing, the playhead steps four times a second; a row marked from the session's line
+/// loses its mark.
+pub fn timers(app: &App) -> Vec<(Duration, Message)> {
+    let mut t = Vec::new();
+    if app.main.player.playing() && !app.hidden {
+        t.push((Duration::from_millis(250), Message::Main(Msg::PlayTick)));
+    }
+    if app.main.list.marked.is_some() {
+        t.push((transcript::MARK_FOR, Message::Main(Msg::List(ListMsg::Unmark))));
+    }
+    t
+}
+
+fn select(app: &App) -> (&crate::model::transcript::Transcript, &ListState) {
+    (&app.live, &app.main.list)
+}
+
+fn header(app: &App) -> El {
+    headers::session_header(app, &app.live, &app.main.list, wrap_list)
+}
+
+pub fn view(app: &App, ui: &mut Ui) -> El {
     let ph = phase(app);
     let compact = app.compact();
     let state = deck_state(app, ph);
@@ -454,68 +453,75 @@ pub fn view(app: &App) -> Element<'_, Message> {
     let banners = notices::banners(app);
 
     if compact {
-        let body: Element<'_, Message> = if ph == Phase::Start {
+        let body: El = if ph == Phase::Start {
             let open = app.main.picker.panel;
-            container(source_picker::summary(app, open, 40.0, Message::Main(Msg::Pick(PickMsg::Panel(!open)))))
-                .center_y(Length::Fill)
-                .width(Length::Fill)
-                .padding([0, 12])
-                .into()
+            div()
+                .size_full()
+                .flex()
+                .items_center()
+                .px(px(12.0))
+                .child(source_picker::summary(app, open, 40.0, Message::Main(Msg::Pick(PickMsg::Panel(!open)))))
+                .into_any_element()
         } else {
-            container(transcript::tail(app, &app.live, &app.main.list))
-                .align_bottom(Length::Fill)
-                .width(Length::Fill)
-                .padding(Padding::new(12.0).top(2).bottom(4))
-                .clip(true)
-                .into()
+            col()
+                .size_full()
+                .justify_end()
+                .overflow_hidden()
+                .px(px(12.0))
+                .pt(px(2.0))
+                .pb(px(4.0))
+                .child(transcript::tail(app, &app.live, &app.main.list))
+                .into_any_element()
         };
-        let page: Element<'_, Message> = column![banners, container(body).height(Length::Fill), deck_el].into();
+        let mut page =
+            col().relative().size_full().child(banners).child(div().flex_1().min_h_0().child(body)).child(deck_el);
         if ph == Phase::Start && app.main.picker.panel {
             // Over the whole window under the title bar, the start row included.
-            return stack![page, source_picker::panel(app)].into();
+            page = page.child(source_picker::panel(app));
         }
-        return page;
+        return page.into_any_element();
     }
 
     if ph == Phase::Start {
-        let label =
-            container(line(t("listenTo"), tokens::CAPTION, p().ink_muted).font(theme::SANS_MEDIUM)).padding([0, 2]);
-        let start = container(column![label, source_picker::picker(app, false)].spacing(8).max_width(380))
-            .center_x(Length::Fill)
-            .padding(Padding::new(16.0).top(12).bottom(8));
-        let mut col = column![banners, start];
+        let label = line(t("listenTo"), tokens::CAPTION, p().ink_muted).medium().px(px(2.0));
+        let start =
+            div().w_full().flex().justify_center().px(px(16.0)).pt(px(12.0)).pb(px(8.0)).child(
+                col().w_full().max_w(px(380.0)).gap(px(8.0)).child(label).child(source_picker::picker(app, false)),
+            );
+        let mut c = col().size_full().child(banners).child(start);
         if deck_h.is_some() {
-            col = col.push(Space::new().height(Length::Fill));
+            c = c.child(div().flex_1());
         }
-        return col.push(deck_el).into();
+        return c.child(deck_el).into_any_element();
     }
 
     let deck_h = deck_h.unwrap_or(deck::EXPANDED.height);
-    let header = (ph == Phase::Review).then(|| headers::session_header(app, &app.live, &app.main.list, wrap_list));
-    let list = transcript::view(Ctx {
+    let list = transcript::view(
         app,
-        tr: &app.live,
-        list: &app.main.list,
-        live: ph == Phase::Live,
-        editable: ph == Phase::Review,
-        header_key: header.as_ref().map_or(0, |h| h.1),
-        header: header.map(|h| h.0),
-        playable: player,
-        wrap: wrap_list,
-        under: LINE_Y,
-    });
+        Ctx {
+            select,
+            live: ph == Phase::Live,
+            editable: ph == Phase::Review,
+            header: (ph == Phase::Review).then_some(header as fn(&App) -> El),
+            playable: player,
+            wrap: wrap_list,
+            under: LINE_Y,
+        },
+        ui,
+    );
     // The transcript runs on under the deck down to its line.
-    let area = stack![
-        column![container(list).height(Length::Fill), Space::new().height(deck_h - LINE_Y)],
-        column![Space::new().height(Length::Fill), deck_el],
-    ]
-    .width(Length::Fill)
-    .height(Length::Fill);
-    let mut col = column![banners];
+    let area = div()
+        .relative()
+        .flex_1()
+        .min_h_0()
+        .w_full()
+        .child(div().absolute().top_0().left_0().right_0().bottom(px(deck_h - LINE_Y)).child(list))
+        .child(col().absolute().inset_0().justify_end().child(deck_el));
+    let mut c = col().size_full().child(banners);
     if ph == Phase::Live && state != DeckState::Finishing {
-        col = col.push(headers::live_header(app, &app.live, &app.main.list, wrap_list));
+        c = c.child(headers::live_header(app, &app.live, &app.main.list, wrap_list));
     }
-    col.push(area).into()
+    c.child(area).into_any_element()
 }
 
 #[cfg(test)]

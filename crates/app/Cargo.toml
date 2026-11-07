@@ -17,8 +17,12 @@ gpu-cuda = ["chidori-core/gpu-cuda"]
 [dependencies]
 chidori-core = { path = "../core" }
 
-# The UI draws on the GPU (wgpu); tiny-skia is only the fallback for a PC where wgpu can't start.
-iced = { version = "=0.14.0", features = ["canvas", "svg", "image-without-codecs", "lazy", "tokio", "advanced"] }
+# The UI is GPUI (Zed's), through GPUI Kit, which pins a GPUI snapshot and adds the text inputs
+# and tooltips GPUI leaves to apps. Drift-prone: pinned with `=`.
+gpui-kit = "=0.9.0"
+# Strokes with round caps and joins for the session's line; the version GPUI tessellates with.
+lyon_tessellation = "1.0.23"
+futures = "0.3.31"
 # The tray icon and native popup menus (muda, re-exported), and global hotkeys.
 tray-icon = "=0.26.1"
 global-hotkey = "=0.9.0"
@@ -58,5 +62,4 @@ serde_json = "1.0.151"
 winresource = "0.1.34"
 
 [dev-dependencies]
-iced_test = "=0.14.0"
 tempfile = "3.27.0"
