@@ -8,20 +8,22 @@ use chidori_core::events::UiState;
 use chidori_core::ops;
 use chidori_core::session::projects::Project;
 use chidori_core::session::recovery::SessionSummary;
-use iced::keyboard::{self, Key, key::Named};
-use iced::widget::{Column, Row, Space, button, column, container, row};
-use iced::{Alignment, Background, Border, Color, Element, Length, Subscription, Task};
+use gpui_kit::{InteractiveElement, IntoElement, ParentElement, Styled, div, px};
 
 use crate::actions::{self, Action, ExportKind};
 use crate::app::{App, Level, Message, call};
 use crate::i18n::{t, tf};
 use crate::icons::{Icon, icon};
 use crate::model::format::{date_time_of, hms};
-use crate::theme::{self, PROJECT_COLORS, line, p, project_color, tokens};
-use crate::widgets::{self, Variant, dialog, dialog_button, with_tip};
+use crate::task::{self, Task};
+use crate::theme::{self, Ink, PROJECT_COLORS, line, p, project_color, tokens};
+use crate::ui::{self, El, Field, KeyPress, Ui, clickable};
+use crate::widgets::{self, Variant, col, dialog, dialog_button, row, with_tip};
 
-/// The one text box a dialog can hold, focused when it opens.
-const INPUT: &str = "dialog-input";
+/// The text boxes a dialog can hold, focused when it opens. Each dialog has its own, so one
+/// doesn't keep the other's placeholder.
+const RENAME_INPUT: &str = "dialog-rename";
+const PROJECT_INPUT: &str = "dialog-project";
 
 /// A project's name is kept short enough for a menu and a title.
 const NAME_MAX: usize = 40;
@@ -34,8 +36,6 @@ pub struct State {
     recovering: bool,
     /// Markdown comes as one ZIP: remembered while the app runs.
     zip: bool,
-    /// Counts dialogs opened, so each one with a text box focuses it once.
-    opened: u64,
 }
 
 #[derive(Debug, Clone)]
@@ -74,7 +74,6 @@ struct ProjectForm {
 pub enum Msg {
     Close,
     Escape,
-    Focus(u64),
     Quit,
     QuitAnswer(Result<bool, AppError>),
     Title(String),
@@ -112,13 +111,15 @@ pub fn spinning(app: &App) -> bool {
 }
 
 fn open(app: &mut App, d: Dialog) {
-    if matches!(d, Dialog::Rename { .. } | Dialog::Project(_)) {
-        app.dialogs.opened += 1;
+    match d {
+        Dialog::Rename { .. } => ui::focus_soon(RENAME_INPUT),
+        Dialog::Project(_) => ui::focus_soon(PROJECT_INPUT),
+        _ => {}
     }
     app.dialogs.open = Some(d);
 }
 
-pub fn update(app: &mut App, m: Msg) -> Task<Message> {
+pub fn update(app: &mut App, m: Msg) -> Task {
     let st = &mut app.dialogs;
     match m {
         Msg::Close => {
@@ -135,19 +136,12 @@ pub fn update(app: &mut App, m: Msg) -> Task<Message> {
                 update(app, Msg::RecoverLater)
             }
         }
-        Msg::Focus(n) => {
-            if n == st.opened && st.open.is_some() {
-                iced::widget::operation::focus(INPUT).chain(iced::widget::operation::move_cursor_to_end(INPUT))
-            } else {
-                Task::none()
-            }
-        }
         Msg::Quit => {
             st.open = None;
             call(app, ops::request_quit, |r| msg(Msg::QuitAnswer(r)))
         }
         // Quitting while recording stops first; the core ends the app once the session is saved.
-        Msg::QuitAnswer(Ok(true)) => iced::exit(),
+        Msg::QuitAnswer(Ok(true)) => task::exit(),
         Msg::QuitAnswer(Ok(false)) => Task::none(),
         Msg::QuitAnswer(Err(e)) => {
             actions::report_error(app, &e, "failed");
@@ -325,7 +319,7 @@ fn follow_project(app: &mut App, ids: &[String], project: Option<String>) {
 }
 
 /// A pick in a menu this module's items came from (`dialog:` ids): 書き出し…, a project, or a new one.
-pub fn on_menu(app: &mut App, rest: &str) -> Task<Message> {
+pub fn on_menu(app: &mut App, rest: &str) -> Task {
     let (verb, arg) = rest.split_once(':').unwrap_or((rest, ""));
     let ids = |s: &str| s.split(',').filter(|i| !i.is_empty()).map(str::to_string).collect::<Vec<_>>();
     match verb {
@@ -352,7 +346,7 @@ pub fn on_menu(app: &mut App, rest: &str) -> Task<Message> {
 }
 
 /// Offers to recover sessions that ended in a crash, once per launch, when nothing records.
-pub fn on_launch(app: &App) -> Task<Message> {
+pub fn on_launch(app: &App) -> Task {
     if app.rec.state != UiState::Ready {
         return Task::none();
     }
@@ -386,30 +380,9 @@ fn title_of(app: &App, id: &str) -> Option<String> {
         .or_else(|| (app.live.session_id.as_deref() == Some(id)).then(|| app.live.title.clone()).flatten())
 }
 
-/// Events this screen listens to beyond its widgets: Escape closes the dialog on top, and a dialog
-/// with a text box focuses it once it shows.
-pub fn subscription(app: &App) -> Subscription<Message> {
-    if !is_open(app) {
-        return Subscription::none();
-    }
-    let mut subs = vec![iced::event::listen_with(on_key)];
-    if matches!(app.dialogs.open, Some(Dialog::Rename { .. } | Dialog::Project(_))) {
-        subs.push(Subscription::run_with(("dialog-focus", app.dialogs.opened), focus_once));
-    }
-    Subscription::batch(subs)
-}
-
-fn on_key(e: iced::Event, _: iced::event::Status, _: iced::window::Id) -> Option<Message> {
-    match e {
-        iced::Event::Keyboard(keyboard::Event::KeyPressed { key: Key::Named(Named::Escape), .. }) => {
-            Some(msg(Msg::Escape))
-        }
-        _ => None,
-    }
-}
-
-fn focus_once(n: &(&'static str, u64)) -> impl iced::futures::Stream<Item = Message> + use<> {
-    iced::futures::stream::once(std::future::ready(msg(Msg::Focus(n.1))))
+/// Escape closes the dialog on top.
+pub fn on_key(app: &App, key: &KeyPress) -> Option<Message> {
+    (is_open(app) && key.code == "Escape").then_some(msg(Msg::Escape))
 }
 
 /// 書き出し: the dialog to pick Markdown, PDF or Typst for a session.
@@ -461,30 +434,22 @@ fn color_key(c: &str) -> String {
 }
 
 /// A project's colour as a small rounded square (the dot is the app's only circle); hollow for none.
-pub fn project_mark<'a, M: 'a>(color: Option<&str>, size: f32) -> Element<'a, M> {
-    let fill = color.map(project_color);
+pub fn project_mark(color: Option<&str>, size: f32) -> El {
     let radius = if size >= 16.0 { 4.0 } else { 3.0 };
-    container(Space::new())
-        .width(size)
-        .height(size)
-        .style(move |_| container::Style {
-            background: fill.map(Background::Color),
-            border: Border {
-                color: if fill.is_some() { Color::TRANSPARENT } else { p().border_strong },
-                width: if fill.is_some() { 0.0 } else { 1.5 },
-                radius: radius.into(),
-            },
-            ..container::Style::default()
-        })
-        .into()
+    let d = div().flex_none().size(px(size)).rounded(px(radius));
+    match color.map(project_color) {
+        Some(c) => d.bg(c),
+        None => d.border(px(1.5)).border_color(p().border_strong),
+    }
+    .into_any_element()
 }
 
-fn body_text<'a>(s: String) -> Element<'a, Message> {
-    theme::t(s, tokens::BODY_SMALL, p().ink).into()
+fn body_text(s: String) -> El {
+    theme::t(s, tokens::BODY_SMALL, p().ink).into_any_element()
 }
 
 /// The open dialog over everything, or none.
-pub fn view(app: &App) -> Option<Element<'_, Message>> {
+pub fn view(app: &App, ui: &mut Ui) -> Option<El> {
     let st = &app.dialogs;
     let cancel = || dialog_button(t("cancel"), Variant::Secondary, Some(msg(Msg::Close)));
     let Some(d) = &st.open else { return recovery(app) };
@@ -496,10 +461,11 @@ pub fn view(app: &App) -> Option<Element<'_, Message>> {
         ),
         Dialog::Rename { title, .. } => {
             let ok = !title.trim().is_empty();
-            let field = widgets::input("", title, |s| msg(Msg::Title(s))).id(INPUT).on_submit(msg(Msg::SaveTitle));
+            let field =
+                ui.input(Field::new(RENAME_INPUT, title, |s| msg(Msg::Title(s))).on_submit(msg(Msg::SaveTitle)));
             dialog(
                 t("rename"),
-                Some(field.into()),
+                Some(field),
                 vec![dialog_button(t("save"), Variant::Primary, ok.then(|| msg(Msg::SaveTitle))), cancel()],
             )
         }
@@ -515,30 +481,33 @@ pub fn view(app: &App) -> Option<Element<'_, Message>> {
             )
         }
         Dialog::Export { busy, .. } => {
-            let rows = [
+            let mut rows = col().gap(px(6.0)).w_full();
+            for (kind, glyph, key) in [
                 (ExportKind::Markdown, Icon::FileText, "formatMarkdown"),
                 (ExportKind::Pdf, Icon::FileType, "formatPdf"),
                 (ExportKind::Typst, Icon::FileCode, "formatTypst"),
-            ]
-            .into_iter()
-            .map(|(kind, glyph, key)| format_row(app, kind, glyph, key, *busy));
+            ] {
+                rows = rows.child(format_row(app, kind, glyph, key, *busy));
+            }
             dialog(
                 t("export"),
-                Some(Column::with_children(rows).spacing(6).into()),
+                Some(rows.into_any_element()),
                 vec![dialog_button(t("cancel"), Variant::Secondary, busy.is_none().then(|| msg(Msg::Close)))],
             )
         }
         Dialog::Project(f) => {
             let ok = !f.name.trim().is_empty();
-            let field = widgets::input(&t("projectName"), &f.name, |s| msg(Msg::ProjectName(s)))
-                .id(INPUT)
-                .on_submit(msg(Msg::SaveProject));
-            let body = column![field, color_choice(&f.color)].spacing(tokens::SPACE_3);
+            let field = ui.input(
+                Field::new(PROJECT_INPUT, &f.name, |s| msg(Msg::ProjectName(s)))
+                    .placeholder(t("projectName"))
+                    .on_submit(msg(Msg::SaveProject)),
+            );
+            let body = col().w_full().gap(px(tokens::SPACE_3)).child(field).child(color_choice(&f.color));
             let (title, save) =
                 if f.editing.is_some() { ("editProject", "save") } else { ("newProject", "createProject") };
             dialog(
                 t(title),
-                Some(body.into()),
+                Some(body.into_any_element()),
                 vec![dialog_button(t(save), Variant::Primary, ok.then(|| msg(Msg::SaveProject))), cancel()],
             )
         }
@@ -551,7 +520,7 @@ pub fn view(app: &App) -> Option<Element<'_, Message>> {
 }
 
 /// Flow D: offers to recover a session that has no end marker, one at a time.
-fn recovery(app: &App) -> Option<Element<'_, Message>> {
+fn recovery(app: &App) -> Option<El> {
     let st = &app.dialogs;
     let s = st.recoverable.first()?;
     let meta = format!(
@@ -560,19 +529,18 @@ fn recovery(app: &App) -> Option<Element<'_, Message>> {
         hms(s.duration_ms),
         tf("segmentsCount", &[("n", &s.segments)])
     );
-    let card = container(
-        column![line(s.title.clone(), tokens::LABEL, p().ink), line(meta, tokens::CAPTION, p().ink_muted),].spacing(2),
-    )
-    .width(Length::Fill)
-    .padding([10.0, tokens::SPACE_3])
-    .style(|_| container::Style {
-        background: Some(p().surface_sunken.into()),
-        border: Border { radius: tokens::RADIUS_LG.into(), ..Border::default() },
-        ..container::Style::default()
-    });
+    let card = col()
+        .w_full()
+        .gap(px(2.0))
+        .py(px(10.0))
+        .px(px(tokens::SPACE_3))
+        .bg(p().surface_sunken)
+        .rounded(px(tokens::RADIUS_LG))
+        .child(line(s.title.clone(), tokens::LABEL, p().ink))
+        .child(line(meta, tokens::CAPTION, p().ink_muted));
     Some(dialog(
         t("recoverTitle"),
-        Some(card.into()),
+        Some(card.into_any_element()),
         vec![
             dialog_button(t("recover"), Variant::Primary, (!st.recovering).then(|| msg(Msg::Recover))),
             dialog_button(t("recoverLater"), Variant::Secondary, Some(msg(Msg::RecoverLater))),
@@ -581,80 +549,66 @@ fn recovery(app: &App) -> Option<Element<'_, Message>> {
 }
 
 /// One of 書き出し's formats; Markdown carries its ZIP switch.
-fn format_row<'a>(
-    app: &App,
-    kind: ExportKind,
-    glyph: Icon,
-    key: &str,
-    busy: Option<ExportKind>,
-) -> Element<'a, Message> {
+fn format_row(app: &App, kind: ExportKind, glyph: Icon, key: &str, busy: Option<ExportKind>) -> El {
     let idle = busy.is_none();
-    let mut content = Row::new()
-        .push(icon(glyph, 18.0, p().ink_muted))
-        .push(container(line(t(key), tokens::LABEL, p().ink)).width(Length::Fill))
-        .spacing(tokens::SPACE_3)
-        .align_y(Alignment::Center);
+    let mut content = row()
+        .w_full()
+        .gap(px(tokens::SPACE_3))
+        .child(icon(glyph, 18.0, p().ink_muted))
+        .child(line(t(key), tokens::LABEL, p().ink).flex_1().min_w_0());
     if busy == Some(kind) {
-        content = content.push(widgets::spinner(16.0, app.now));
+        content = content.child(widgets::spinner(16.0, app.now));
     }
     if kind == ExportKind::Markdown {
         let zip = app.dialogs.zip;
         let toggle = idle.then(|| msg(Msg::Zip(!zip)));
-        let label = row![
-            line("ZIP", tokens::CAPTION, p().ink_muted).font(theme::SANS_MEDIUM),
-            widgets::switch(zip, toggle.clone())
-        ]
-        .spacing(tokens::SPACE_2)
-        .align_y(Alignment::Center);
-        content = content.push(with_tip(widgets::bare(label, toggle, false), t("zipToggle")));
+        let label = row()
+            .gap(px(tokens::SPACE_2))
+            .child(line("ZIP", tokens::CAPTION, p().ink_muted).medium())
+            .child(widgets::switch(zip, toggle.clone()));
+        content = content.child(with_tip(widgets::bare(label, toggle, false), t("zipToggle")));
     }
-    let b = button(container(content).padding([10.0, tokens::SPACE_3]).center_y(46))
-        .width(Length::Fill)
-        .padding(0)
-        .style(move |_, status| {
-            let p = p();
-            let hot = idle && matches!(status, button::Status::Hovered | button::Status::Pressed);
-            button::Style {
-                background: Some(if hot { p.surface_sunken } else { p.surface_raised }.into()),
-                text_color: p.ink,
-                border: Border {
-                    color: if hot { p.border_strong } else { p.border },
-                    width: 1.0,
-                    radius: tokens::RADIUS_LG.into(),
-                },
-                ..button::Style::default()
-            }
-        });
-    if idle { b.on_press(msg(Msg::ExportAs(kind))).into() } else { b.into() }
+    let pal = p();
+    let mut b = clickable(idle.then(|| msg(Msg::ExportAs(kind))), ("format", key))
+        .flex()
+        .items_center()
+        .w_full()
+        .h(px(46.0))
+        .px(px(tokens::SPACE_3))
+        .bg(pal.surface_raised)
+        .border_1()
+        .border_color(pal.border)
+        .rounded(px(tokens::RADIUS_LG))
+        .text_color(pal.ink)
+        .child(content);
+    if idle {
+        let (sunk, strong) = (pal.surface_sunken, pal.border_strong);
+        b = b.hover(move |s| s.bg(sunk).border_color(strong));
+    }
+    b.into_any_element()
 }
 
 /// The colour choice: one square per colour, the chosen one ringed.
-fn color_choice<'a>(chosen: &str) -> Element<'a, Message> {
-    let squares = PROJECT_COLORS.iter().map(|&c| {
+fn color_choice(chosen: &str) -> El {
+    let mut r = row().gap(px(6.0));
+    for c in PROJECT_COLORS {
         let on = c == chosen;
-        let b = button(container(project_mark(Some(c), 16.0)).center(26))
-            .width(28)
-            .height(28)
-            .padding(0)
-            .style(move |_, status| button::Style {
-                background: None,
-                border: Border {
-                    color: if on {
-                        p().ink
-                    } else if matches!(status, button::Status::Hovered) {
-                        p().border_strong
-                    } else {
-                        Color::TRANSPARENT
-                    },
-                    width: 1.0,
-                    radius: tokens::RADIUS_MD.into(),
-                },
-                ..button::Style::default()
-            })
-            .on_press(msg(Msg::ProjectColor(c)));
-        with_tip(b, t(&color_key(c)))
-    });
-    Row::with_children(squares).spacing(6).into()
+        let strong = p().border_strong;
+        let mut b = clickable(Some(msg(Msg::ProjectColor(c))), ("color", c))
+            .flex()
+            .items_center()
+            .justify_center()
+            .size(px(28.0))
+            .border_1()
+            .rounded(px(tokens::RADIUS_MD))
+            .border_color(if on { p().ink } else { theme::Color::TRANSPARENT })
+            .child(project_mark(Some(c), 16.0));
+        if !on {
+            b = b.hover(move |s| s.border_color(strong));
+        }
+        r = r.child(with_tip(b, t(&color_key(c))));
+    }
+    r.into_any_element()
 }
 
 #[cfg(test)]
@@ -680,47 +634,5 @@ mod tests {
         for c in PROJECT_COLORS {
             assert_ne!(t(&color_key(c)), color_key(c), "{c} has no name");
         }
-    }
-}
-
-#[cfg(test)]
-mod previews {
-    use super::*;
-    use crate::preview::{app, shot};
-    use crate::screens::history::previews::{fixture, session};
-
-    #[test]
-    #[ignore = "writes PNGs for review"]
-    fn preview_history_dialogs() {
-        let (mut app, _dir) = app();
-        fixture(&mut app);
-        let size = crate::app::EXPANDED;
-
-        ask_rename(&mut app, "a1".into());
-        shot(&app, "history-dialog-rename", size);
-        ask_delete(&mut app, vec!["a1".into()], None);
-        shot(&app, "history-dialog-delete", size);
-        ask_delete_selected(&mut app, vec!["a1".into(), "b22".into()]);
-        shot(&app, "history-dialog-delete-many", size);
-        ask_export(&mut app, "a1".into());
-        shot(&app, "history-dialog-export", size);
-        app.dialogs.zip = true;
-        app.dialogs.open = Some(Dialog::Export { id: "a1".into(), busy: Some(ExportKind::Pdf) });
-        shot(&app, "history-dialog-export-busy", size);
-        ask_new_project(&mut app, vec!["a1".into()]);
-        if let Some(Dialog::Project(f)) = &mut app.dialogs.open {
-            f.name = "顧客インタビュー".into();
-        }
-        shot(&app, "history-dialog-new-project", size);
-        let first = app.projects[0].clone();
-        ask_edit_project(&mut app, first.clone());
-        shot(&app, "history-dialog-edit-project", size);
-        ask_delete_project(&mut app, first);
-        shot(&app, "history-dialog-delete-project", size);
-        ask_confirm_quit(&mut app);
-        shot(&app, "history-dialog-quit", size);
-        app.dialogs.open = None;
-        app.dialogs.recoverable = vec![session("r1", "2026-10-27T14:05:00+09:00", "Zoom 定例", "途中まで", 1_234_000)];
-        shot(&app, "history-dialog-recover", size);
     }
 }

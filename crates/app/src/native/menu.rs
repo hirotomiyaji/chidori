@@ -84,7 +84,7 @@ fn build(items: &[Item]) -> Vec<Box<dyn IsMenuItem>> {
 
 /// Shows a menu at a point in the window (logical pixels), or at the cursor. Blocks until the
 /// menu closes; the pick, if any, follows as an event.
-pub fn popup(hwnd: u64, items: &[Item], at: Option<iced::Point>) {
+pub fn popup(hwnd: u64, items: &[Item], at: Option<crate::paint::Point>) {
     let menu = Menu::new();
     let children = build(items);
     let refs: Vec<&dyn IsMenuItem> = children.iter().map(|c| c.as_ref()).collect();
@@ -95,7 +95,7 @@ pub fn popup(hwnd: u64, items: &[Item], at: Option<iced::Point>) {
     let position =
         at.map(|p| tray_icon::dpi::Position::Logical(tray_icon::dpi::LogicalPosition::new(p.x as f64, p.y as f64)));
     #[cfg(windows)]
-    // SAFETY: `hwnd` is the app's own live window, from Iced.
+    // SAFETY: `hwnd` is the app's own live window, from GPUI.
     unsafe {
         let picked = menu.show_context_menu_for_hwnd(hwnd as isize, position);
         tracing::debug!("popup menu closed, picked: {picked}");

@@ -13,8 +13,10 @@ use chidori_core::models::manager::ModelEntry;
 use chidori_core::ops::{self, AppInfo, SessionView};
 use chidori_core::session::projects::Project;
 use chidori_core::settings::{Layout, Settings};
-use iced::widget::{Space, column, container, stack};
-use iced::{Border, Element, Length, Size, Subscription, Task, Theme, window};
+use gpui_kit::{
+    AppContext as _, Bounds, Context, ExternalPaths, FocusHandle, InteractiveElement, IntoElement, ParentElement,
+    Render, Styled, Subscription, Window, WindowAppearance, WindowBounds, WindowOptions, div, point, px, size,
+};
 
 use crate::bridge::{self, UiEvent};
 use crate::model::line::LineHistory;
@@ -22,9 +24,12 @@ use crate::model::recording::Recording;
 use crate::model::source::{AppLevels, SourceChoice};
 use crate::model::transcript::Transcript;
 use crate::native::{self, menu};
+use crate::paint::{Point, Size};
 use crate::screens;
+use crate::task::{Cmd, Task};
 use crate::theme::{self, p};
-use crate::{actions, i18n};
+use crate::ui::{self, El, Ui};
+use crate::{actions, i18n, icons};
 
 pub const EXPANDED: Size = Size::new(420.0, 640.0);
 const EXPANDED_MIN: Size = Size::new(360.0, 420.0);
@@ -108,7 +113,8 @@ const TOAST_FOR: Duration = Duration::from_secs(2);
 
 pub struct App {
     pub core: AppHandle,
-    pub window: Option<window::Id>,
+    /// The window is open (commands that act on it wait for this).
+    pub window: bool,
     pub hwnd: Option<u64>,
     /// The window is minimized or in the tray: nothing animates.
     pub hidden: bool,
@@ -153,10 +159,11 @@ pub struct App {
 #[derive(Debug, Clone)]
 pub enum Message {
     Bridge(UiEvent),
-    WindowOpened(window::Id),
+    WindowOpened,
     Hwnd(u64),
-    WindowEvent(window::Event),
-    ThemeMode(iced::theme::Mode),
+    WindowEvent(WindowEvent),
+    /// Windows switched between light (`false`) and dark.
+    ThemeMode(bool),
     Tick(Instant),
 
     Go(View),
@@ -170,7 +177,7 @@ pub enum Message {
     /// A command failed: a banner or a toast, by its error code (`fallback` is the toast's key).
     Failed(AppError, &'static str),
     /// Shows a native popup menu, at a point in the window or at the cursor.
-    Popup(Vec<menu::Item>, Option<iced::Point>),
+    Popup(Vec<menu::Item>, Option<Point>),
 
     SettingsChanged(Box<(Settings, Settings)>),
     Info(Box<AppInfo>),
@@ -197,9 +204,19 @@ pub enum Message {
     Noop,
 }
 
+/// What happened to the window.
+#[derive(Debug, Clone)]
+pub enum WindowEvent {
+    CloseRequested,
+    /// Minimized or hidden (`true`), or back on screen.
+    Hidden(bool),
+    Moved(Point),
+    Focused,
+    FileDropped(PathBuf),
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum WinAction {
-    Drag,
     Minimize,
     Close,
     ToggleOnTop,
@@ -209,42 +226,60 @@ pub enum WinAction {
     ToggleVisible,
 }
 
-pub fn run() -> iced::Result {
-    let mut app = iced::application(App::boot, App::update, App::view)
-        .title(|_: &App| "Chidori".to_string())
-        .subscription(App::subscription)
-        .theme(App::theme)
-        .default_font(theme::SANS)
-        .exit_on_close_request(false)
-        .window(window::Settings {
-            size: EXPANDED,
-            min_size: Some(EXPANDED_MIN),
-            decorations: false,
-            position: saved_position().map_or(window::Position::Centered, window::Position::Specific),
-            icon: window_icon(),
-            ..window::Settings::default()
-        });
-    for font in theme::FONTS {
-        app = app.font(font);
-    }
-    app.run()
+/// Opens the window and runs the app until it quits.
+pub fn run() {
+    let app = gpui_kit::application().with_assets(icons::Assets);
+    app.run(|cx| {
+        gpui_kit::init(cx);
+        let fonts = theme::FONTS.iter().map(|f| std::borrow::Cow::Borrowed(*f)).collect();
+        if let Err(e) = cx.text_system().add_fonts(fonts) {
+            tracing::warn!("loading the brand fonts: {e}");
+        }
+        let bounds = match saved_position() {
+            Some(at) => Bounds::new(point(px(at.x), px(at.y)), size(px(EXPANDED.width), px(EXPANDED.height))),
+            None => Bounds::centered(None, size(px(EXPANDED.width), px(EXPANDED.height)), cx),
+        };
+        let options = WindowOptions {
+            window_bounds: Some(WindowBounds::Windowed(bounds)),
+            titlebar: None,
+            // Fixed when the window opens: the compact layout's, the smaller; the expanded one's
+            // larger minimum is kept by `AppView::keep_limits`.
+            window_min_size: Some(size(px(COMPACT_MIN.width), px(COMPACT_MIN.height))),
+            is_resizable: true,
+            app_id: Some("dev.yusai.chidori".into()),
+            ..WindowOptions::default()
+        };
+        let opened = gpui_kit::open_window(options, cx, |window, cx| cx.new(|cx| AppView::new(window, cx)));
+        if let Err(e) = opened {
+            tracing::error!("opening the window: {e}");
+            cx.quit();
+        }
+    });
 }
 
-fn window_icon() -> Option<window::Icon> {
-    let img = image::load_from_memory(include_bytes!("../icons/32x32.png")).ok()?.into_rgba8();
-    let (w, h) = img.dimensions();
-    window::icon::from_rgba(img.into_raw(), w, h).ok()
+/// `--show-in-captures`: the window shows in screenshots and screen recordings for this run,
+/// whatever 設定 says, so the app itself can be captured (testing, docs) without changing the
+/// user's setting.
+fn show_in_captures() -> bool {
+    static FLAG: std::sync::LazyLock<bool> =
+        std::sync::LazyLock::new(|| std::env::args().skip(1).any(|a| a == "--show-in-captures"));
+    *FLAG
+}
+
+/// Whether the window keeps out of screen captures: 設定's choice, unless the launch said otherwise.
+fn capture_excluded(settings: &Settings) -> bool {
+    settings.screenshot.exclude_self && !show_in_captures()
 }
 
 /// Where the window was last time (`window.json`), so it opens there again.
-fn saved_position() -> Option<iced::Point> {
+fn saved_position() -> Option<Point> {
     let app = bridge::core()?;
     let bytes = std::fs::read(app.paths().config.join("window.json")).ok()?;
     let v: serde_json::Value = serde_json::from_slice(&bytes).ok()?;
-    Some(iced::Point::new(v.get("x")?.as_f64()? as f32, v.get("y")?.as_f64()? as f32))
+    Some(Point::new(v.get("x")?.as_f64()? as f32, v.get("y")?.as_f64()? as f32))
 }
 
-fn save_position(app: &AppHandle, at: iced::Point) {
+fn save_position(app: &AppHandle, at: Point) {
     let body = serde_json::json!({ "x": at.x, "y": at.y });
     let _ = std::fs::create_dir_all(&app.paths().config);
     if let Err(e) = std::fs::write(app.paths().config.join("window.json"), body.to_string()) {
@@ -257,7 +292,7 @@ pub fn call<T: Send + 'static>(
     app: &App,
     f: impl FnOnce(&AppHandle) -> T + Send + 'static,
     map: impl FnOnce(T) -> Message + Send + 'static,
-) -> Task<Message> {
+) -> Task {
     let core = app.core.clone();
     Task::future(async move {
         match chidori_core::host::runtime().spawn_blocking(move || f(&core)).await {
@@ -271,11 +306,7 @@ pub fn call<T: Send + 'static>(
 }
 
 impl App {
-    fn boot() -> (Self, Task<Message>) {
-        Self::new(bridge::core().expect("core set before the window opens").clone())
-    }
-
-    pub fn new(core: AppHandle) -> (Self, Task<Message>) {
+    pub fn new(core: AppHandle) -> (Self, Task) {
         let settings = ops::settings(&core);
         let info = ops::app_info(&core);
         let mut source = SourceChoice::default();
@@ -285,7 +316,7 @@ impl App {
         rec.engine = Some(info.engine.clone());
         let app = App {
             core,
-            window: None,
+            window: false,
             hwnd: None,
             hidden: false,
             now: Instant::now(),
@@ -318,7 +349,6 @@ impl App {
         };
         let follow = app.follow_session(app.rec.session_id.clone());
         let tasks = Task::batch([
-            iced::system::theme().map(Message::ThemeMode),
             app.refresh_models(),
             app.refresh_projects(),
             app.refresh_devices(),
@@ -351,29 +381,29 @@ impl App {
         self.effective_layout() == Layout::Compact
     }
 
-    pub fn refresh_models(&self) -> Task<Message> {
+    pub fn refresh_models(&self) -> Task {
         call(self, ops::models_list, Message::Models)
     }
 
-    pub fn refresh_info(&self) -> Task<Message> {
+    pub fn refresh_info(&self) -> Task {
         call(self, |c| Box::new(ops::app_info(c)), Message::Info)
     }
 
-    pub fn refresh_projects(&self) -> Task<Message> {
+    pub fn refresh_projects(&self) -> Task {
         call(self, ops::list_projects, Message::Projects)
     }
 
-    pub fn refresh_apps(&mut self) -> Task<Message> {
+    pub fn refresh_apps(&mut self) -> Task {
         self.source.loading_apps = true;
         call(self, |_| ops::list_audio_apps().unwrap_or_default(), Message::Apps)
     }
 
-    pub fn refresh_devices(&self) -> Task<Message> {
+    pub fn refresh_devices(&self) -> Task {
         call(self, |_| ops::list_mic_devices().unwrap_or_default(), Message::Devices)
     }
 
     /// Loads the transcript of a session the core reports as active.
-    fn follow_session(&self, session_id: Option<String>) -> Task<Message> {
+    fn follow_session(&self, session_id: Option<String>) -> Task {
         let Some(id) = session_id else { return Task::none() };
         if self.live.session_id.as_deref() == Some(id.as_str()) {
             return Task::none();
@@ -415,14 +445,14 @@ impl App {
         }
     }
 
-    pub fn update(&mut self, message: Message) -> Task<Message> {
+    pub fn update(&mut self, message: Message) -> Task {
         match message {
             Message::Bridge(event) => self.on_bridge(event),
-            Message::WindowOpened(id) => {
-                self.window = Some(id);
-                let mut tasks = vec![window::raw_id::<Message>(id).map(Message::Hwnd)];
+            Message::WindowOpened => {
+                self.window = true;
+                let mut tasks = Vec::new();
                 if self.settings.window.always_on_top {
-                    tasks.push(window::set_level(id, window::Level::AlwaysOnTop));
+                    tasks.push(Task::cmd(Cmd::OnTop(true)));
                 }
                 tasks.push(self.sync_layout());
                 Task::batch(tasks)
@@ -430,12 +460,15 @@ impl App {
             Message::Hwnd(hwnd) => {
                 self.hwnd = Some(hwnd);
                 native::window::apply_chrome(hwnd);
-                native::window::set_capture_excluded(hwnd, self.settings.screenshot.exclude_self);
+                native::window::set_capture_excluded(hwnd, capture_excluded(&self.settings));
+                if self.settings.window.always_on_top {
+                    native::window::set_topmost(hwnd, true);
+                }
                 Task::none()
             }
             Message::WindowEvent(event) => self.on_window_event(event),
-            Message::ThemeMode(mode) => {
-                theme::set_dark(mode == iced::theme::Mode::Dark);
+            Message::ThemeMode(dark) => {
+                theme::set_dark(dark);
                 Task::none()
             }
             Message::Tick(now) => {
@@ -578,13 +611,15 @@ impl App {
         if new.screenshot.exclude_self != old.screenshot.exclude_self
             && let Some(hwnd) = self.hwnd
         {
-            native::window::set_capture_excluded(hwnd, new.screenshot.exclude_self);
+            native::window::set_capture_excluded(hwnd, capture_excluded(new));
         }
     }
 
     /// Sizes the window for the layout it shows, when that changed.
-    pub fn sync_layout(&mut self) -> Task<Message> {
-        let Some(id) = self.window else { return Task::none() };
+    pub fn sync_layout(&mut self) -> Task {
+        if !self.window {
+            return Task::none();
+        }
         let layout = self.effective_layout();
         if self.shown_layout == Some(layout) {
             return Task::none();
@@ -594,20 +629,15 @@ impl App {
             Layout::Compact => (COMPACT, COMPACT_MIN, false),
             Layout::Expanded => (EXPANDED, EXPANDED_MIN, true),
         };
-        Task::batch([
-            window::set_resizable(id, true),
-            window::set_min_size(id, Some(min)),
-            window::resize(id, size),
-            window::set_resizable(id, resizable),
-        ])
+        Task::cmd(Cmd::Size { w: size.width, h: size.height, min_w: min.width, min_h: min.height, resizable })
     }
 
-    fn on_bridge(&mut self, event: UiEvent) -> Task<Message> {
+    fn on_bridge(&mut self, event: UiEvent) -> Task {
         match event {
             UiEvent::Core(e) => self.on_core(e),
             UiEvent::TrayClick => self.on_window_action(WinAction::ToggleVisible),
             UiEvent::SecondInstance => self.on_window_action(WinAction::Show),
-            UiEvent::Exit => iced::exit(),
+            UiEvent::Exit => crate::task::exit(),
             UiEvent::Menu(id) => {
                 tracing::debug!("menu pick {id}");
                 self.on_menu(id)
@@ -616,7 +646,7 @@ impl App {
     }
 
     /// A pick in a native menu, routed by its id's prefix to the screen that opened it.
-    fn on_menu(&mut self, id: String) -> Task<Message> {
+    fn on_menu(&mut self, id: String) -> Task {
         let (owner, rest) = id.split_once(':').unwrap_or((id.as_str(), ""));
         let rest = rest.to_string();
         match owner {
@@ -638,7 +668,7 @@ impl App {
         }
     }
 
-    fn on_core(&mut self, event: Event) -> Task<Message> {
+    fn on_core(&mut self, event: Event) -> Task {
         match event {
             Event::State(p) => {
                 let before = self.rec.state;
@@ -747,40 +777,31 @@ impl App {
         }
     }
 
-    fn on_window_event(&mut self, event: window::Event) -> Task<Message> {
+    fn on_window_event(&mut self, event: WindowEvent) -> Task {
         match event {
-            window::Event::CloseRequested => self.on_window_action(WinAction::Close),
-            window::Event::Resized(size) => {
-                self.set_hidden(size.width < 1.0 || size.height < 1.0);
+            WindowEvent::CloseRequested => self.on_window_action(WinAction::Close),
+            WindowEvent::Hidden(hidden) => {
+                self.set_hidden(hidden);
                 Task::none()
             }
-            window::Event::Moved(at) => {
+            WindowEvent::Moved(at) => {
                 save_position(&self.core, at);
                 Task::none()
             }
-            window::Event::Focused => {
+            WindowEvent::Focused => {
                 self.set_hidden(false);
                 Task::none()
             }
-            window::Event::FileHovered(_) => {
-                self.dropping = self.can_drop();
-                Task::none()
-            }
-            window::Event::FilesHoveredLeft => {
-                self.dropping = false;
-                Task::none()
-            }
-            window::Event::FileDropped(path) => {
+            WindowEvent::FileDropped(path) => {
                 let ok = self.can_drop();
                 self.dropping = false;
                 if ok { actions::transcribe_file(self, Some(path)) } else { Task::none() }
             }
-            _ => Task::none(),
         }
     }
 
     /// A dropped file is transcribed only when nothing records and setup is done (FR-18).
-    fn can_drop(&self) -> bool {
+    pub fn can_drop(&self) -> bool {
         self.rec.state == UiState::Ready && !self.needs_wizard()
     }
 
@@ -789,13 +810,14 @@ impl App {
         chidori_core::host::set_ui_hidden(hidden);
     }
 
-    pub fn on_window_action(&mut self, action: WinAction) -> Task<Message> {
-        let Some(id) = self.window else { return Task::none() };
+    pub fn on_window_action(&mut self, action: WinAction) -> Task {
+        if !self.window {
+            return Task::none();
+        }
         match action {
-            WinAction::Drag => window::drag(id),
             WinAction::Minimize => {
                 self.set_hidden(true);
-                window::minimize(id, true)
+                Task::cmd(Cmd::Minimize)
             }
             WinAction::Close => {
                 // Closing while recording or finishing hides to the tray; otherwise the app quits.
@@ -803,20 +825,16 @@ impl App {
                     native::notify::show(&chidori_core::host::os_text(self.settings.locale, "hiddenToTray", ""));
                     self.on_window_action(WinAction::Hide)
                 } else {
-                    iced::exit()
+                    crate::task::exit()
                 }
             }
             WinAction::Hide => {
                 self.set_hidden(true);
-                window::set_mode(id, window::Mode::Hidden)
+                Task::cmd(Cmd::Hide)
             }
             WinAction::Show => {
                 self.set_hidden(false);
-                Task::batch([
-                    window::set_mode(id, window::Mode::Windowed),
-                    window::minimize(id, false),
-                    window::gain_focus(id),
-                ])
+                Task::cmd(Cmd::Show)
             }
             WinAction::ToggleVisible => {
                 if self.hidden {
@@ -827,9 +845,8 @@ impl App {
             }
             WinAction::ToggleOnTop => {
                 let on = !self.settings.window.always_on_top;
-                let level = if on { window::Level::AlwaysOnTop } else { window::Level::Normal };
                 Task::batch([
-                    window::set_level(id, level),
+                    Task::cmd(Cmd::OnTop(on)),
                     Task::done(Message::UpdateSettings(serde_json::json!({ "window": { "alwaysOnTop": on } }))),
                 ])
             }
@@ -846,23 +863,27 @@ impl App {
         }
     }
 
-    fn subscription(&self) -> Subscription<Message> {
-        let mut subs = vec![
-            bridge::subscription().map(Message::Bridge),
-            window::open_events().map(Message::WindowOpened),
-            window::events().map(|(_, e)| Message::WindowEvent(e)),
-            iced::system::theme_changes().map(Message::ThemeMode),
-            screens::main_view::subscription(self),
-            screens::viewer::subscription(self),
-            screens::history::subscription(self),
-            screens::settings::subscription(self),
-            screens::wizard::subscription(self),
-            screens::dialogs::subscription(self),
-        ];
-        if let Some(every) = self.tick_every() {
-            subs.push(iced::time::every(every).map(Message::Tick));
+    /// Messages sent again and again while something waits on the clock, each with its interval;
+    /// the tick that animates comes from `tick_every`.
+    fn timers(&self) -> Vec<(Duration, Message)> {
+        let mut t = Vec::new();
+        t.extend(screens::main_view::timers(self));
+        t.extend(screens::viewer::timers(self));
+        t
+    }
+
+    /// A key pressed anywhere in the window, for the screens that answer one.
+    fn on_key(&self, key: &ui::KeyPress) -> Vec<Message> {
+        let mut out = Vec::new();
+        out.extend(screens::dialogs::on_key(self, key));
+        if screens::dialogs::is_open(self) {
+            return out;
         }
-        Subscription::batch(subs)
+        out.extend(screens::settings::on_key(self, key));
+        out.extend(screens::main_view::on_key(self, key));
+        out.extend(screens::viewer::on_key(self, key));
+        out.extend(screens::history::on_key(self, key));
+        out
     }
 
     /// How often to redraw for what moves, or never: nothing moves while the window is hidden.
@@ -885,65 +906,246 @@ impl App {
         None
     }
 
-    fn theme(&self) -> Theme {
-        let p = p();
-        Theme::custom(
-            "kamon",
-            iced::theme::Palette {
-                background: p.surface,
-                text: p.ink,
-                primary: p.accent,
-                success: p.success,
-                warning: p.warning,
-                danger: p.danger,
-            },
-        )
-    }
-
-    pub fn view(&self) -> Element<'_, Message> {
-        let body: Element<'_, Message> = if self.needs_wizard() {
+    pub fn view(&self, ui: &mut Ui) -> El {
+        let body: El = if self.needs_wizard() {
             screens::wizard::view(self)
         } else {
             match self.view {
-                View::Main => screens::main_view::view(self),
-                View::Settings => screens::settings::view(self),
-                View::History => screens::history::view(self),
-                View::Session => screens::viewer::view(self),
+                View::Main => screens::main_view::view(self, ui),
+                View::Settings => screens::settings::view(self, ui),
+                View::History => screens::history::view(self, ui),
+                View::Session => screens::viewer::view(self, ui),
             }
         };
-        let page = column![screens::titlebar::view(self), container(body).height(Length::Fill)];
-        let mut layers: Vec<Element<'_, Message>> = vec![page.into()];
-        if self.dropping {
-            layers.push(screens::notices::drop_overlay());
-        }
-        layers.push(screens::notices::toasts(self));
-        if let Some(d) = screens::dialogs::view(self) {
-            layers.push(d);
-        }
+        let page = div()
+            .size_full()
+            .flex()
+            .flex_col()
+            .child(screens::titlebar::view(self))
+            .child(div().flex_1().min_h_0().w_full().flex().flex_col().child(body));
         let flash = self.flash.is_some();
-        container(stack(layers).width(Length::Fill).height(Length::Fill))
-            .width(Length::Fill)
-            .height(Length::Fill)
-            .style(move |_| {
-                let p = p();
-                container::Style {
-                    background: Some(p.surface.into()),
-                    text_color: Some(p.ink),
-                    border: Border {
-                        color: if flash { p.accent } else { p.border },
-                        width: if flash { 2.0 } else { 1.0 },
-                        radius: 0.0.into(),
-                    },
-                    ..container::Style::default()
+        let p = p();
+        let mut root = div()
+            .relative()
+            .size_full()
+            .bg(p.surface)
+            .text_color(p.ink)
+            .font_family(theme::SANS)
+            .text_size(px(theme::tokens::BODY_SMALL.size))
+            .border_color(if flash { p.accent } else { p.border })
+            .child(page);
+        root = if flash { root.border_2() } else { root.border_1() };
+        if self.dropping {
+            root = root.child(screens::notices::drop_overlay());
+        }
+        root = root.child(screens::notices::toasts(self));
+        if let Some(d) = screens::dialogs::view(self, ui) {
+            root = root.child(d);
+        }
+        root.into_any_element()
+    }
+}
+
+/// The window's one view: the app, and what GPUI needs to run it.
+pub struct AppView {
+    pub app: App,
+    focus: FocusHandle,
+    /// The animation tick and its interval.
+    ticker: Option<(Duration, gpui_kit::Task<()>)>,
+    /// Running timers, by what they send.
+    timers: Vec<(String, gpui_kit::Task<()>)>,
+    /// The size, minimum and resizability the layout asks of the window.
+    limits: Option<(Size, Size, bool)>,
+    last_origin: Option<Point>,
+    _subs: Vec<Subscription>,
+}
+
+impl AppView {
+    fn new(window: &mut Window, cx: &mut Context<Self>) -> Self {
+        let core = bridge::core().expect("core set before the window opens").clone();
+        let dark = matches!(window.appearance(), WindowAppearance::Dark | WindowAppearance::VibrantDark);
+        theme::set_dark(dark);
+        theme::apply_to_kit(cx);
+        let (app, task) = App::new(core);
+        ui::install(window.window_handle(), cx.weak_entity());
+        let focus = cx.focus_handle();
+        window.focus(&focus, cx);
+        let mut subs = vec![
+            cx.observe_window_appearance(window, |_, window, cx| {
+                let dark = matches!(window.appearance(), WindowAppearance::Dark | WindowAppearance::VibrantDark);
+                theme::set_dark(dark);
+                theme::apply_to_kit(cx);
+                ui::send(Message::ThemeMode(dark), cx);
+            }),
+            cx.observe_window_bounds(window, |v, window, cx| v.on_bounds(window, cx)),
+            cx.observe_window_activation(window, |v, window, cx| {
+                if window.is_window_active() {
+                    ui::send(Message::WindowEvent(WindowEvent::Focused), cx);
+                }
+                v.check_hidden(cx);
+            }),
+            cx.observe_keystrokes(|v, ev, _, cx| {
+                let key = ui::KeyPress::from(&ev.keystroke);
+                for m in v.app.on_key(&key) {
+                    ui::send(m, cx);
+                }
+            }),
+        ];
+        subs.push(cx.observe_window_visibility(window, |v, _, _, cx| v.check_hidden(cx)));
+        window.on_window_should_close(cx, |_, cx| {
+            ui::send(Message::WindowEvent(WindowEvent::CloseRequested), cx);
+            false
+        });
+        // The core's events, the tray, menus and hotkeys arrive on one channel.
+        if let Some(mut rx) = bridge::take_receiver() {
+            cx.spawn(async move |_, cx| {
+                while let Some(e) = rx.recv().await {
+                    cx.update(|cx| ui::send(Message::Bridge(e), cx));
                 }
             })
-            .into()
+            .detach();
+        }
+        let hwnd = hwnd_of(window);
+        ui::run(task, cx);
+        if let Some(h) = hwnd {
+            ui::send(Message::Hwnd(h), cx);
+        }
+        ui::send(Message::WindowOpened, cx);
+        Self { app, focus, ticker: None, timers: Vec::new(), limits: None, last_origin: None, _subs: subs }
+    }
+
+    /// Carries out a window command an update asked for.
+    pub fn apply(&mut self, cmd: Cmd, window: &mut Window, cx: &mut Context<Self>) {
+        match cmd {
+            Cmd::Focus(key) => ui::focus(&key, window, cx),
+            Cmd::Size { w, h, min_w, min_h, resizable } => {
+                self.limits = Some((Size::new(w, h), Size::new(min_w, min_h), resizable));
+                window.resize(size(px(w), px(h)));
+            }
+            Cmd::OnTop(on) => {
+                if let Some(h) = self.app.hwnd {
+                    native::window::set_topmost(h, on);
+                }
+            }
+            Cmd::Minimize => window.minimize_window(),
+            Cmd::Hide => {
+                if let Some(h) = self.app.hwnd {
+                    native::window::set_visible(h, false);
+                }
+            }
+            Cmd::Show => {
+                if let Some(h) = self.app.hwnd {
+                    native::window::set_visible(h, true);
+                }
+                window.activate_window();
+            }
+            Cmd::Exit => cx.quit(),
+        }
+    }
+
+    /// After a batch of messages: start or stop what runs on the clock.
+    pub fn after_update(&mut self, cx: &mut Context<Self>) {
+        screens::housekeeping(&self.app);
+        let every = self.app.tick_every();
+        if self.ticker.as_ref().map(|t| t.0) != every {
+            self.ticker = every.map(|d| (d, repeat(d, || Message::Tick(Instant::now()), cx)));
+        }
+        let wanted = self.app.timers();
+        self.timers.retain(|(k, _)| wanted.iter().any(|(d, m)| &timer_key(*d, m) == k));
+        for (d, m) in wanted {
+            let k = timer_key(d, &m);
+            if !self.timers.iter().any(|(t, _)| *t == k) {
+                self.timers.push((k, repeat(d, move || m.clone(), cx)));
+            }
+        }
+    }
+
+    fn on_bounds(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        // Saved as GPUI saves a window for reopening: its live origin is the client area's, which
+        // opened 4 px higher on every launch.
+        let b = window.window_bounds().get_bounds();
+        let origin = Point::new(f32::from(b.origin.x), f32::from(b.origin.y));
+        if self.last_origin != Some(origin) {
+            self.last_origin = Some(origin);
+            ui::send(Message::WindowEvent(WindowEvent::Moved(origin)), cx);
+        }
+        self.keep_limits(window);
+        self.check_hidden(cx);
+    }
+
+    /// GPUI fixes a window's minimum size and resizability when it opens; the layout's own are
+    /// kept here by sizing the window back.
+    fn keep_limits(&mut self, window: &mut Window) {
+        let Some((want, min, resizable)) = self.limits else { return };
+        if self.app.hidden {
+            return;
+        }
+        let b = window.bounds();
+        let (w, h) = (f32::from(b.size.width), f32::from(b.size.height));
+        let target = if resizable { Size::new(w.max(min.width), h.max(min.height)) } else { want };
+        if (target.width - w).abs() > 0.5 || (target.height - h).abs() > 0.5 {
+            window.resize(size(px(target.width), px(target.height)));
+        }
+    }
+
+    fn check_hidden(&mut self, cx: &mut Context<Self>) {
+        let Some(h) = self.app.hwnd else { return };
+        let hidden = native::window::is_minimized(h);
+        if hidden != self.app.hidden {
+            ui::send(Message::WindowEvent(WindowEvent::Hidden(hidden)), cx);
+        }
+    }
+}
+
+fn timer_key(d: Duration, m: &Message) -> String {
+    format!("{}:{m:?}", d.as_millis())
+}
+
+/// Sends a message every `every` until the returned task is dropped.
+fn repeat(every: Duration, msg: impl Fn() -> Message + 'static, cx: &mut Context<AppView>) -> gpui_kit::Task<()> {
+    cx.spawn(async move |this, cx| {
+        loop {
+            cx.background_executor().timer(every).await;
+            if this.update(cx, |_, cx| ui::send(msg(), cx)).is_err() {
+                break;
+            }
+        }
+    })
+}
+
+/// The native handle of the window, for what only Win32 can do.
+fn hwnd_of(window: &Window) -> Option<u64> {
+    use raw_window_handle::{HasWindowHandle, RawWindowHandle};
+    match HasWindowHandle::window_handle(window).ok()?.as_raw() {
+        RawWindowHandle::Win32(h) => Some(h.hwnd.get() as u64),
+        _ => None,
+    }
+}
+
+impl Render for AppView {
+    fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        ui::begin_frame();
+        self.app.dropping = cx.has_active_drag() && self.app.can_drop();
+        let view = {
+            let mut ui = Ui { window, cx };
+            self.app.view(&mut ui)
+        };
+        div()
+            .id("chidori")
+            .size_full()
+            .track_focus(&self.focus)
+            .on_drop(|paths: &ExternalPaths, _, cx| {
+                if let Some(path) = paths.paths().first() {
+                    ui::send(Message::WindowEvent(WindowEvent::FileDropped(path.clone())), cx);
+                }
+            })
+            .child(view)
     }
 }
 
 /// An empty element, for a part with nothing to show.
-pub fn nothing<'a>() -> Element<'a, Message> {
-    Space::new().into()
+pub fn nothing() -> El {
+    div().into_any_element()
 }
 
 /// A path for a screenshot of a session (`images/…` under its folder).

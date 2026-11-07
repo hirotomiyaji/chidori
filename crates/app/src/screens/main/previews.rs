@@ -1,19 +1,15 @@
-//! Previews of 録音: `cargo test -p chidori preview_main -- --ignored --test-threads 1` writes
-//! `previews/main-*.png`.
+//! 録音 in the states a recording passes through, for tests of what it shows.
 
 use std::time::{Duration, Instant};
 
 use chidori_core::events::{PartialPayload, RecordedSources, UiState};
-use chidori_core::session::model::{
-    AudioFile, Marker, MarkerKind, Screenshot, Segment, SourceId, SourceInfo, TimelineItem,
-};
-use chidori_core::session::recovery::Sound;
-use chidori_core::settings::{Layout, SourceMode};
+use chidori_core::session::model::{Marker, MarkerKind, Screenshot, Segment, SourceId, SourceInfo, TimelineItem};
+use chidori_core::settings::SourceMode;
 
-use crate::app::{App, COMPACT, EXPANDED};
+use crate::app::App;
 use crate::model::line::Sample;
 use crate::model::source::ChosenApp;
-use crate::preview::{app, shot};
+use crate::preview::app;
 
 fn seg(id: &str, source: SourceId, t: u64, text: &str, important: bool) -> TimelineItem {
     TimelineItem::Segment(Segment {
@@ -119,57 +115,6 @@ fn recording(app: &mut App) {
         text: "わかりました、それで".into(),
         t_start_ms: Some(START + 44_000),
     });
-}
-
-#[test]
-#[ignore = "writes PNGs for review"]
-fn preview_main_start() {
-    let (mut app, _dir) = app();
-    app.source.mode = SourceMode::System;
-    shot(&app, "main-start", EXPANDED);
-    app.settings.window.layout = Layout::Compact;
-    shot(&app, "main-start-compact", COMPACT);
-}
-
-#[test]
-#[ignore = "writes PNGs for review"]
-fn preview_main_live() {
-    let (mut app, _dir) = app();
-    recording(&mut app);
-    shot(&app, "main-live", EXPANDED);
-    app.settings.window.layout = Layout::Compact;
-    shot(&app, "main-live-compact", COMPACT);
-}
-
-#[test]
-#[ignore = "writes PNGs for review"]
-fn preview_main_paused() {
-    let (mut app, _dir) = app();
-    recording(&mut app);
-    app.rec.state = UiState::Paused;
-    app.rec.lag = None;
-    shot(&app, "main-paused", EXPANDED);
-}
-
-#[test]
-#[ignore = "writes PNGs for review"]
-fn preview_main_finished() {
-    let (mut app, dir) = app();
-    session(&mut app, "s1");
-    let t = &mut app.live;
-    t.duration_ms = Some(START + 60_000);
-    t.folder = Some(dir.path().join("session"));
-    t.model_id = Some("large-v3-turbo-q5_0".into());
-    t.gpu = Some(true);
-    t.audio = vec![AudioFile { file: "audio/1.ogg".into(), start_ms: 0 }];
-    let wave = |phase: f32| -> Vec<u8> {
-        (0..128).map(|i| ((((i as f32) * 0.31 + phase).sin() * 0.5 + 0.5) * 70.0) as u8).collect()
-    };
-    t.sound = Some(Sound { others: wave(0.0), me: wave(2.0) });
-    app.now = Instant::now();
-    shot(&app, "main-finished", EXPANDED);
-    app.settings.window.layout = Layout::Compact;
-    shot(&app, "main-finished-compact", COMPACT);
 }
 
 #[test]

@@ -11,8 +11,7 @@ use chidori_core::events::DownloadPayload;
 use chidori_core::models::benchmark::{BenchmarkResult, Tier};
 use chidori_core::models::manager::ModelEntry;
 use chidori_core::ops;
-use iced::widget::{Column, Space, column, container, row};
-use iced::{Alignment, Element, Length, Padding, Task};
+use gpui_kit::{IntoElement, ParentElement, Styled, div, px};
 
 use super::form;
 use crate::actions::{report_error, with_parent};
@@ -20,8 +19,10 @@ use crate::app::{App, Level, Message, SettingsTab, call};
 use crate::i18n::{is_ja, t, tf};
 use crate::icons::{Icon, icon};
 use crate::model::format::{bytes, model_name_parts};
-use crate::theme::{self, line, p, tokens};
-use crate::widgets::{self, Size, Variant, btn, btn_icon, icon_button, progress, spinner, with_tip};
+use crate::task::Task;
+use crate::theme::{self, Ink, line, p, tokens};
+use crate::ui::El;
+use crate::widgets::{self, Size, Variant, btn, btn_icon, col, fill, icon_button, progress, row, spinner, with_tip};
 
 /// The models the app recommends (section 12); the others wait behind ほかのモデル.
 pub const MAIN_MODELS: [&str; 2] = ["turbo-q5", "small-q5"];
@@ -156,7 +157,7 @@ pub fn shown<'a>(
 }
 
 /// Reports a failed command, then rereads the list.
-fn done(app: &mut App, r: Result<(), AppError>) -> Task<Message> {
+fn done(app: &mut App, r: Result<(), AppError>) -> Task {
     if let Err(e) = r {
         report_error(app, &e, "failed");
     }
@@ -167,7 +168,7 @@ fn to_done(r: Result<(), AppError>) -> Message {
     Message::ModelsUi(Msg::Done(r))
 }
 
-pub fn update(app: &mut App, msg: Msg) -> Task<Message> {
+pub fn update(app: &mut App, msg: Msg) -> Task {
     match msg {
         Msg::Download(id) => call(app, move |c| ops::model_download(c, &id), to_done),
         Msg::Cancel(id) => call(
@@ -241,7 +242,7 @@ pub fn update(app: &mut App, msg: Msg) -> Task<Message> {
 }
 
 /// Download progress: kept per model, and the list rereads once a download stops.
-pub fn on_download(app: &mut App, p: &DownloadPayload) -> Task<Message> {
+pub fn on_download(app: &mut App, p: &DownloadPayload) -> Task {
     app.models_ui.progress.insert(p.id.clone(), p.clone());
     if p.phase == "error"
         && let Some(e) = &p.error
@@ -256,60 +257,56 @@ pub fn spinning(app: &App) -> bool {
 }
 
 /// The list itself, for the page and for 設定 › モデル.
-pub fn list(app: &App) -> Element<'_, Message> {
+pub fn list(app: &App) -> El {
     let s = &app.models_ui;
     let (models, waiting) = shown(&app.models, &s.progress, s.more);
-    let mut col = Column::new().spacing(tokens::SPACE_2).width(Length::Fill);
+    let mut c = col().w_full().gap(px(tokens::SPACE_2));
     for m in models {
-        col = col.push(model_row(app, m));
+        c = c.child(model_row(app, m));
     }
     if waiting > 0 {
-        col = col.push(form::link(
-            row![
-                icon(Icon::ChevronDown, 13.0, p().ink_muted),
-                theme::plain(tf("moreModels", &[("n", &waiting)]), tokens::CAPTION).font(theme::SANS_MEDIUM)
-            ]
-            .spacing(4)
-            .align_y(Alignment::Center),
+        c = c.child(form::link(
+            row()
+                .gap(px(4.0))
+                .child(icon(Icon::ChevronDown, 13.0, p().ink_muted))
+                .child(theme::plain(tf("moreModels", &[("n", &waiting)]), tokens::CAPTION).medium()),
             Message::ModelsUi(Msg::More),
         ));
     }
-    col = col.push(import(app));
+    c = c.child(import(app));
     if app.info.gpu_failed {
-        col = col.push(btn(t("retryGpu"), Variant::Secondary, Size::Sm, Some(Message::ModelsUi(Msg::RetryGpu))));
+        c = c.child(btn(t("retryGpu"), Variant::Secondary, Size::Sm, Some(Message::ModelsUi(Msg::RetryGpu))));
     }
-    container(col).padding(Padding::new(tokens::SPACE_3).top(tokens::SPACE_1).bottom(tokens::SPACE_4)).into()
+    div().w_full().px(px(tokens::SPACE_3)).pt(px(tokens::SPACE_1)).pb(px(tokens::SPACE_4)).child(c).into_any_element()
 }
 
 /// ファイルから追加: a model downloaded elsewhere, one button per model not on this PC.
-fn import(app: &App) -> Element<'_, Message> {
+fn import(app: &App) -> El {
     let open = app.models_ui.import_open;
     let summary = form::link(
-        row![
-            icon(if open { Icon::ChevronDown } else { Icon::ChevronRight }, 13.0, p().ink_muted),
-            theme::plain(t("importFromFile"), tokens::CAPTION)
-        ]
-        .spacing(4)
-        .align_y(Alignment::Center),
+        row()
+            .gap(px(4.0))
+            .child(icon(if open { Icon::ChevronDown } else { Icon::ChevronRight }, 13.0, p().ink_muted))
+            .child(theme::plain(t("importFromFile"), tokens::CAPTION)),
         Message::ModelsUi(Msg::ToggleImport),
     );
-    let mut col = Column::new().push(summary).spacing(6);
+    let mut c = col().gap(px(6.0)).pt(px(tokens::SPACE_1)).items_start().child(summary);
     if open {
-        let buttons = app.models.iter().filter(|m| (!m.entry.hidden || m.installed) && !m.installed).map(|m| {
-            btn(
+        let mut buttons = div().flex().flex_wrap().gap(px(6.0));
+        for m in app.models.iter().filter(|m| (!m.entry.hidden || m.installed) && !m.installed) {
+            buttons = buttons.child(btn(
                 m.entry.file.clone(),
                 Variant::Secondary,
                 Size::Sm,
                 Some(Message::ModelsUi(Msg::Import(m.entry.id.clone()))),
-            )
-            .into()
-        });
-        col = col.push(row(buttons).spacing(6).wrap().vertical_spacing(6));
+            ));
+        }
+        c = c.child(buttons);
     }
-    container(col).padding(Padding::ZERO.top(tokens::SPACE_1)).into()
+    c.into_any_element()
 }
 
-fn model_row<'a>(app: &'a App, m: &'a ModelEntry) -> Element<'a, Message> {
+fn model_row(app: &App, m: &ModelEntry) -> El {
     let s = &app.models_ui;
     let id = m.entry.id.clone();
     let prog = s.progress.get(&m.entry.id);
@@ -317,14 +314,18 @@ fn model_row<'a>(app: &'a App, m: &'a ModelEntry) -> Element<'a, Message> {
     let in_use = m.selected && m.installed;
     let getting = downloading(m, prog);
 
-    let mut name = row![theme::t(name_of(m), tokens::LABEL, p().ink)].spacing(6).align_y(Alignment::Center);
+    let mut name = div().flex().flex_wrap().items_center().gap(px(6.0)).child(theme::t(
+        name_of(m).to_string(),
+        tokens::LABEL,
+        p().ink,
+    ));
     if m.recommended {
-        name = name.push(form::tag(t("recommended"), false));
+        name = name.child(form::tag(t("recommended"), false));
     }
     if in_use {
-        name = name.push(form::tag(t("selected"), true));
+        name = name.child(form::tag(t("selected"), true));
     }
-    let mut about = Column::new().push(name.wrap().vertical_spacing(4)).push(theme::t(
+    let mut about = col().gap(px(2.0)).flex_1().min_w_0().child(name).child(theme::t(
         format!("{} · {} · {}", description_of(m), bytes(m.entry.size_bytes), m.entry.license),
         tokens::CAPTION,
         p().ink_muted,
@@ -334,14 +335,14 @@ fn model_row<'a>(app: &'a App, m: &'a ModelEntry) -> Element<'a, Message> {
         if b.heavy() {
             text = format!("{text} — {}", t("tierHeavyHint"));
         }
-        about = about.push(theme::t(text, tokens::CAPTION, if b.heavy() { p().warning } else { p().success }));
+        about = about.child(theme::t(text, tokens::CAPTION, if b.heavy() { p().warning } else { p().success }));
     }
 
-    let mut actions = row![].spacing(4).align_y(Alignment::Center);
+    let mut actions = row().gap(px(4.0)).flex_none();
     if m.installed {
         if !m.selected {
             // Secondary: the list may hold several models to switch to, and a view has one primary.
-            actions = actions.push(btn_icon(
+            actions = actions.child(btn_icon(
                 Icon::Check,
                 t("use"),
                 Variant::Secondary,
@@ -350,8 +351,12 @@ fn model_row<'a>(app: &'a App, m: &'a ModelEntry) -> Element<'a, Message> {
             ));
         }
         let benching = s.benching.contains(&m.entry.id);
-        let gauge: Element<'_, Message> = if benching {
-            with_tip(container(spinner(14.0, app.now)).center(32), t("benchmark"))
+        let gauge: El = if benching {
+            with_tip(
+                div().flex().items_center().justify_center().size(px(32.0)).child(spinner(14.0, app.now)),
+                t("benchmark"),
+            )
+            .into_any_element()
         } else {
             icon_button(
                 Icon::Gauge,
@@ -360,19 +365,23 @@ fn model_row<'a>(app: &'a App, m: &'a ModelEntry) -> Element<'a, Message> {
                 (!busy).then(|| Message::ModelsUi(Msg::Benchmark(id.clone()))),
             )
         };
-        actions = actions.push(gauge);
-        actions = actions.push(icon_button(
+        actions = actions.child(gauge);
+        actions = actions.child(icon_button(
             Icon::Trash,
             t("delete"),
             Size::Md,
             (!(busy && m.selected)).then(|| Message::ModelsUi(Msg::Delete(id.clone()))),
         ));
     } else if getting {
-        actions =
-            actions.push(icon_button(Icon::X, t("cancel"), Size::Md, Some(Message::ModelsUi(Msg::Cancel(id.clone())))));
+        actions = actions.child(icon_button(
+            Icon::X,
+            t("cancel"),
+            Size::Md,
+            Some(Message::ModelsUi(Msg::Cancel(id.clone()))),
+        ));
     } else {
         let label = if m.partial_bytes > 0 { t("resumeDownload") } else { t("download") };
-        actions = actions.push(btn_icon(
+        actions = actions.child(btn_icon(
             Icon::Download,
             label,
             Variant::Secondary,
@@ -381,37 +390,31 @@ fn model_row<'a>(app: &'a App, m: &'a ModelEntry) -> Element<'a, Message> {
         ));
     }
 
-    let mut body = Column::new().push(
-        row![container(about.spacing(2)).width(Length::Fill), actions]
-            .spacing(tokens::SPACE_2)
-            .align_y(Alignment::Start),
-    );
+    let mut body =
+        col().w_full().child(div().flex().items_start().w_full().gap(px(tokens::SPACE_2)).child(about).child(actions));
     if getting && let Some(p) = prog {
-        body = body.push(Space::new().height(tokens::SPACE_2)).push(download_progress(
-            p.received,
-            p.total,
-            p.bytes_per_sec,
-        ));
+        body = body.child(div().h(px(tokens::SPACE_2))).child(download_progress(p.received, p.total, p.bytes_per_sec));
     }
-    form::card(body, in_use).into()
+    form::card(body, in_use).into_any_element()
 }
 
 /// A download's bar, with how much has come and how fast.
-pub fn download_progress<'a>(received: u64, total: u64, bytes_per_sec: f64) -> Element<'a, Message> {
-    let mut numbers =
-        row![line(format!("{} / {}", bytes(received), bytes(total)), tokens::CAPTION, p().ink_muted).font(theme::MONO)];
+pub fn download_progress(received: u64, total: u64, bytes_per_sec: f64) -> El {
+    let mut numbers = row()
+        .w_full()
+        .child(line(format!("{} / {}", bytes(received), bytes(total)), tokens::CAPTION, p().ink_muted).mono());
     if bytes_per_sec > 0.0 {
-        numbers = numbers.push(Space::new().width(Length::Fill)).push(
+        numbers = numbers.child(fill()).child(
             line(tf("downloadSpeed", &[("speed", &bytes(bytes_per_sec as u64))]), tokens::CAPTION, p().ink_muted)
-                .font(theme::MONO),
+                .mono(),
         );
     }
-    column![progress(received as f32, total as f32), numbers.width(Length::Fill)].spacing(4).into()
+    col().w_full().gap(px(4.0)).child(progress(received as f32, total as f32)).child(numbers).into_any_element()
 }
 
 /// Which model transcribes and on what, as a quiet line of text (`標準 · GPU`). Opens 設定 ›
 /// モデル when idle; while recording it only says.
-pub fn note(app: &App) -> Option<Element<'_, Message>> {
+pub fn note(app: &App) -> Option<El> {
     let engine = app.rec.engine.as_ref();
     let id = match engine {
         Some(e) if e.state == EngineState::Ready && e.model_id.is_some() => e.model_id.clone().unwrap_or_default(),
@@ -434,23 +437,22 @@ pub fn note(app: &App) -> Option<Element<'_, Message>> {
     .collect::<Vec<_>>()
     .join("\n");
 
-    let mut body =
-        row![line(name.short, tokens::CAPTION, p().ink).font(theme::SANS_MEDIUM)].spacing(4).align_y(Alignment::Center);
+    let mut body = row().gap(px(4.0)).child(line(name.short, tokens::CAPTION, p().ink).medium());
     if let Some(d) = device {
-        body = body.push(line(format!("· {d}"), tokens::CAPTION, p().ink_muted));
+        body = body.child(line(format!("· {d}"), tokens::CAPTION, p().ink_muted));
     }
     if loading {
-        body = body.push(spinner(11.0, app.now));
+        body = body.child(spinner(11.0, app.now));
     }
     if failed {
-        body = body.push(line(format!("· {}", t("modelFailed")), tokens::CAPTION, p().ink).font(theme::SANS_MEDIUM));
+        body = body.child(line(format!("· {}", t("modelFailed")), tokens::CAPTION, p().ink).medium());
     }
-    let content: Element<'_, Message> = if busy {
-        body.into()
+    let content: El = if busy {
+        body.into_any_element()
     } else {
-        widgets::bare(body, Some(Message::GoSettings(SettingsTab::Models)), false).into()
+        widgets::bare(body, Some(Message::GoSettings(SettingsTab::Models)), false).into_any_element()
     };
-    Some(with_tip(content, tip))
+    Some(with_tip(content, tip).into_any_element())
 }
 
 #[cfg(test)]

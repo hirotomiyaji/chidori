@@ -5,8 +5,6 @@ use std::sync::OnceLock;
 
 use chidori_core::events::{Event, EventSink};
 use chidori_core::host::{AppHandle, Shell};
-use iced::Subscription;
-use iced::futures::stream;
 use parking_lot::Mutex;
 use tokio::sync::mpsc::{UnboundedReceiver, UnboundedSender, unbounded_channel};
 
@@ -40,17 +38,9 @@ pub fn send(event: UiEvent) {
     }
 }
 
-/// The channel as a subscription. Iced keeps one alive for the app's life, so the receiver is
-/// taken once.
-pub fn subscription() -> Subscription<UiEvent> {
-    Subscription::run(|| {
-        let rx = RX.lock().take();
-        stream::unfold(rx, |rx| async move {
-            let mut rx = rx?;
-            let event = rx.recv().await?;
-            Some((event, Some(rx)))
-        })
-    })
+/// The receiving end, taken once by the window, which hands each event to the app.
+pub fn take_receiver() -> Option<UnboundedReceiver<UiEvent>> {
+    RX.lock().take()
 }
 
 /// The core's events go straight into the channel.

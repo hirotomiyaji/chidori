@@ -7,9 +7,7 @@ use chidori_core::export::LabelMode;
 use chidori_core::ops;
 use chidori_core::session::model::SourceId;
 use chidori_core::settings::{Hotkeys, Language, Layout, Locale, ScreenshotTarget, Settings};
-use iced::keyboard::{self, key::Physical};
-use iced::widget::{Column, Space, button, column, container, row, slider, text_editor};
-use iced::{Alignment, Background, Border, Element, Length, Padding, Subscription, Task, mouse};
+use gpui_kit::{InteractiveElement, IntoElement, ParentElement, Styled, div, px};
 use serde_json::{Value, json};
 
 use super::form::{self, Opt, choose, opt};
@@ -17,8 +15,14 @@ use crate::actions::with_parent;
 use crate::app::{App, Message, SettingsTab, call};
 use crate::i18n::{t, tf};
 use crate::icons::{Icon, icon};
-use crate::theme::{self, line, p, tokens};
-use crate::widgets::{Size, Variant, btn, field, hairline, input_style, section, toggle_row};
+use crate::task::Task;
+use crate::theme::{self, Ink, line, p, tokens};
+pub use crate::ui::KeyPress;
+use crate::ui::{self, El, Field, Ui, clickable};
+use crate::widgets::{Size, Variant, btn, col, field, fill, hairline, row, section, toggle_row};
+
+const VOCAB: &str = "settings-vocab";
+const TEMPLATE: &str = "settings-template";
 
 /// The sections in the order the list shows them.
 pub const TABS: [(SettingsTab, &str); 7] = [
@@ -76,17 +80,6 @@ impl Hotkey {
     }
 }
 
-/// A key pressed while a shortcut is being recorded: its physical key by name (`KeyR`, `F9`,
-/// `Escape`) and the modifiers held.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct KeyPress {
-    pub code: String,
-    pub ctrl: bool,
-    pub alt: bool,
-    pub shift: bool,
-    pub logo: bool,
-}
-
 /// Turns a key press into an accelerator such as `Ctrl+Alt+R`, or nothing for a press that can't
 /// be one (a modifier alone, a key with no name).
 pub fn accelerator_from(k: &KeyPress) -> Option<String> {
@@ -127,12 +120,11 @@ pub struct State {
     /// The shortcut waiting for keys, if any.
     pub recording: Option<Hotkey>,
     advanced: bool,
-    vocab: text_editor::Content,
+    vocab: String,
     vocab_dirty: bool,
     template: Option<String>,
     template_dirty: bool,
-    /// A slider's value while it is moved; kept after it is let go so it doesn't jump back while
-    /// the save goes through.
+    /// A slider's value once stepped; kept so it doesn't jump back while the save goes through.
     threshold: Option<f32>,
     hangover: Option<f32>,
 }
@@ -143,9 +135,9 @@ pub enum Msg {
     Save(Value),
     MicDevice(Option<String>),
     ToggleAdvanced,
+    /// A slider stepped to a value, saved at once.
     Slide(Slider, f32),
-    SlideDone(Slider),
-    Vocab(text_editor::Action),
+    Vocab(String),
     Template(String),
     /// Enter in the title format, or a click anywhere: what was being typed is saved.
     Leave,
@@ -156,7 +148,7 @@ pub enum Msg {
     Key(KeyPress),
 }
 
-fn save(partial: Value) -> Task<Message> {
+fn save(partial: Value) -> Task {
     Task::done(Message::UpdateSettings(partial))
 }
 
@@ -170,12 +162,12 @@ pub fn vocabulary_of(text: &str) -> Vec<String> {
 }
 
 /// Saves what is being typed, once it changed.
-fn leave(app: &mut App) -> Task<Message> {
+fn leave(app: &mut App) -> Task {
     let s = &mut app.settings_ui;
     let mut tasks = Vec::new();
     if s.vocab_dirty {
         s.vocab_dirty = false;
-        tasks.push(save(json!({ "vocabulary": vocabulary_of(&s.vocab.text()) })));
+        tasks.push(save(json!({ "vocabulary": vocabulary_of(&s.vocab) })));
     }
     if s.template_dirty {
         s.template_dirty = false;
@@ -186,14 +178,14 @@ fn leave(app: &mut App) -> Task<Message> {
     Task::batch(tasks)
 }
 
-pub fn update(app: &mut App, m: Msg) -> Task<Message> {
+pub fn update(app: &mut App, m: Msg) -> Task {
     match m {
         Msg::Open(tab) => {
             let flush = leave(app);
             let s = &mut app.settings_ui;
             s.recording = None;
             s.advanced = false;
-            s.vocab = text_editor::Content::with_text(&app.settings.vocabulary.join("\n"));
+            s.vocab = app.settings.vocabulary.join("\n");
             s.template = None;
             s.threshold = None;
             s.hangover = None;
@@ -209,26 +201,22 @@ pub fn update(app: &mut App, m: Msg) -> Task<Message> {
             app.settings_ui.advanced = !app.settings_ui.advanced;
             Task::none()
         }
-        Msg::Slide(which, v) => {
-            match which {
-                Slider::Threshold => app.settings_ui.threshold = Some(v),
-                Slider::Hangover => app.settings_ui.hangover = Some(v),
-            }
-            Task::none()
-        }
-        Msg::SlideDone(which) => match which {
-            Slider::Threshold => app.settings_ui.threshold.map_or(Task::none(), |v| {
+        Msg::Slide(which, v) => match which {
+            Slider::Threshold => {
+                app.settings_ui.threshold = Some(v);
                 save(json!({ "vad": { "startThreshold": (v as f64 * 100.0).round() / 100.0 } }))
-            }),
-            Slider::Hangover => app
-                .settings_ui
-                .hangover
-                .map_or(Task::none(), |v| save(json!({ "vad": { "hangoverMs": v.round() as u32 } }))),
+            }
+            Slider::Hangover => {
+                app.settings_ui.hangover = Some(v);
+                save(json!({ "vad": { "hangoverMs": v.round() as u32 } }))
+            }
         },
-        Msg::Vocab(action) => {
+        Msg::Vocab(text) => {
             let s = &mut app.settings_ui;
-            s.vocab_dirty |= action.is_edit();
-            s.vocab.perform(action);
+            if s.vocab != text {
+                s.vocab = text;
+                s.vocab_dirty = true;
+            }
             Task::none()
         }
         Msg::Template(v) => {
@@ -289,7 +277,7 @@ pub fn update(app: &mut App, m: Msg) -> Task<Message> {
     }
 }
 
-pub fn on_menu(_app: &mut App, _rest: &str) -> Task<Message> {
+pub fn on_menu(_app: &mut App, _rest: &str) -> Task {
     Task::none()
 }
 
@@ -299,54 +287,58 @@ pub fn spinning(_app: &App) -> bool {
     false
 }
 
-/// Keys while a shortcut is being recorded, and clicks while one is recorded or text waits to be
-/// saved (a click elsewhere is leaving it).
-pub fn subscription(app: &App) -> Subscription<Message> {
-    let s = &app.settings_ui;
-    if s.recording.is_none() && !s.vocab_dirty && !s.template_dirty {
-        return Subscription::none();
-    }
-    iced::event::listen_with(|event, _, _| match event {
-        iced::Event::Keyboard(keyboard::Event::KeyPressed {
-            physical_key: Physical::Code(code),
-            modifiers,
-            repeat: false,
-            ..
-        }) => Some(msg(Msg::Key(KeyPress {
-            code: format!("{code:?}"),
-            ctrl: modifiers.control(),
-            alt: modifiers.alt(),
-            shift: modifiers.shift(),
-            logo: modifiers.logo(),
-        }))),
-        // Comes before the release that presses a button, so recording another shortcut still works.
-        iced::Event::Mouse(mouse::Event::ButtonPressed(_)) => Some(msg(Msg::Leave)),
-        _ => None,
-    })
+/// Keys while a shortcut is being recorded.
+pub fn on_key(app: &App, key: &KeyPress) -> Option<Message> {
+    app.settings_ui.recording.is_some().then(|| msg(Msg::Key(key.clone())))
 }
 
-pub fn view(app: &App) -> Element<'_, Message> {
+/// A click anywhere while a shortcut is recorded or text waits to be saved is leaving it.
+fn leaving(app: &App) -> bool {
+    let s = &app.settings_ui;
+    s.recording.is_some() || s.vocab_dirty || s.template_dirty
+}
+
+pub fn view(app: &App, ui: &mut Ui) -> El {
     let tab = app.settings_tab;
-    if tab == SettingsTab::Index {
-        return index(app);
-    }
-    let body: Element<'_, Message> = match tab {
-        SettingsTab::Models => super::models::list(app),
-        _ => {
-            let groups = match tab {
-                SettingsTab::General => general(app),
-                SettingsTab::Audio => audio(app),
-                SettingsTab::Transcription => transcription(app),
-                SettingsTab::Screenshots => screenshots(app),
-                SettingsTab::Hotkeys => hotkeys(app),
-                _ => output(app),
-            };
-            container(Column::with_children(groups).spacing(tokens::SPACE_3))
-                .padding(Padding::new(14.0).top(tokens::SPACE_3).bottom(tokens::SPACE_4))
-                .into()
-        }
+    let page = if tab == SettingsTab::Index {
+        index(app)
+    } else {
+        let body: El = match tab {
+            SettingsTab::Models => super::models::list(app),
+            _ => {
+                let groups = match tab {
+                    SettingsTab::General => general(app),
+                    SettingsTab::Audio => audio(app),
+                    SettingsTab::Transcription => transcription(app, ui),
+                    SettingsTab::Screenshots => screenshots(app),
+                    SettingsTab::Hotkeys => hotkeys(app),
+                    _ => output(app, ui),
+                };
+                let mut c = col()
+                    .w_full()
+                    .gap(px(tokens::SPACE_3))
+                    .px(px(14.0))
+                    .pt(px(tokens::SPACE_3))
+                    .pb(px(tokens::SPACE_4));
+                for g in groups {
+                    c = c.child(g);
+                }
+                c.into_any_element()
+            }
+        };
+        col()
+            .size_full()
+            .child(form::head(t(tab_key(tab)), Some(t("settingsTitle"))))
+            .child(hairline())
+            .child(form::scroll(body))
+            .into_any_element()
     };
-    column![form::head(t(tab_key(tab)), Some(t("settingsTitle"))), hairline(), form::scroll(body)].into()
+    let mut root = div().id("settings").size_full().flex().flex_col().child(page);
+    if leaving(app) {
+        // Comes before the release that presses a button, so recording another shortcut still works.
+        root = root.on_any_mouse_down(|_, _, cx| ui::send(msg(Msg::Leave), cx));
+    }
+    root.into_any_element()
 }
 
 fn language_key(l: Language) -> &'static str {
@@ -415,62 +407,57 @@ pub fn summary(app: &App, tab: SettingsTab) -> String {
 }
 
 /// The list: each section, what it is set to, and a chevron; the version and the logs below.
-fn index(app: &App) -> Element<'_, Message> {
-    let mut rows = Column::new().push(hairline());
+fn index(app: &App) -> El {
+    let mut rows = col().w_full().child(hairline());
     for (tab, key) in TABS {
         let attention = tab == SettingsTab::Hotkeys && hotkeys_taken(app);
-        let value = form::fit(&summary(app, tab), 210.0, tokens::CAPTION.size);
-        let value = line(value, tokens::CAPTION, if attention { p().ink } else { p().ink_muted }).font(if attention {
-            theme::SANS_MEDIUM
-        } else {
-            theme::SANS
-        });
-        let r = row![
-            container(line(t(key), tokens::LABEL, p().ink)).width(Length::Fill),
-            value,
-            icon(Icon::ChevronRight, 14.0, p().ink_muted),
-        ]
-        .spacing(10)
-        .align_y(Alignment::Center)
-        .padding([tokens::SPACE_3, 6.0]);
-        let b =
-            button(r).width(Length::Fill).padding(0).on_press(msg(Msg::Open(tab))).style(|_, status| button::Style {
-                background: matches!(status, button::Status::Hovered | button::Status::Pressed)
-                    .then_some(Background::Color(p().surface_sunken)),
-                ..button::Style::default()
-            });
-        rows = rows.push(b).push(hairline());
+        let value =
+            line(summary(app, tab), tokens::CAPTION, if attention { p().ink } else { p().ink_muted }).max_w(px(210.0));
+        let value = if attention { value.medium() } else { value };
+        let sunk = p().surface_sunken;
+        let r = clickable(Some(msg(Msg::Open(tab))), ("settings-tab", key))
+            .flex()
+            .items_center()
+            .w_full()
+            .gap(px(10.0))
+            .py(px(tokens::SPACE_3))
+            .px(px(6.0))
+            .hover(move |s| s.bg(sunk))
+            .child(line(t(key), tokens::LABEL, p().ink).flex_1().min_w_0())
+            .child(value)
+            .child(icon(Icon::ChevronRight, 14.0, p().ink_muted));
+        rows = rows.child(r).child(hairline());
     }
-    let foot = row![
-        line(tf("version", &[("v", &app.info.version)]), tokens::CAPTION, p().ink_muted),
-        Space::new().width(Length::Fill),
-        form::link(theme::plain(t("openLogs"), tokens::CAPTION).font(theme::SANS_MEDIUM), msg(Msg::OpenLogs)),
-    ]
-    .align_y(Alignment::Center)
-    .padding(Padding::new(6.0).top(tokens::SPACE_3).bottom(0));
-    column![
-        form::head(t("settingsTitle"), None),
-        form::scroll(container(column![rows, foot]).padding(Padding::new(14.0).top(0).bottom(tokens::SPACE_4)))
-    ]
-    .into()
+    let foot = row()
+        .w_full()
+        .px(px(6.0))
+        .pt(px(tokens::SPACE_3))
+        .child(line(tf("version", &[("v", &app.info.version)]), tokens::CAPTION, p().ink_muted))
+        .child(fill())
+        .child(form::link(theme::plain(t("openLogs"), tokens::CAPTION).medium(), msg(Msg::OpenLogs)));
+    col()
+        .size_full()
+        .child(form::head(t("settingsTitle"), None))
+        .child(form::scroll(col().w_full().px(px(14.0)).pb(px(tokens::SPACE_4)).child(rows).child(foot)))
+        .into_any_element()
 }
 
 /// A labelled dropdown.
-fn pick<'a, T: Clone + PartialEq + 'a>(
+fn pick<T: Clone + PartialEq + 'static>(
     label: &str,
     options: Vec<Opt<T>>,
     value: &T,
-    on: impl Fn(T) -> Message + 'a,
-) -> Element<'a, Message> {
-    field(t(label), choose(options, value, on))
+    on: impl Fn(T) -> Message + 'static,
+) -> El {
+    field(t(label), choose(label, options, value, on))
 }
 
 /// A switch that saves at once.
-fn switch<'a>(label: &str, on: bool, partial: impl Fn(bool) -> Value) -> Element<'a, Message> {
+fn switch(label: &str, on: bool, partial: impl Fn(bool) -> Value) -> El {
     toggle_row(t(label), on, Some(msg(Msg::Save(partial(!on)))))
 }
 
-fn general(app: &App) -> Vec<Element<'_, Message>> {
+fn general(app: &App) -> Vec<El> {
     let s = &app.settings;
     vec![section(
         None,
@@ -490,78 +477,61 @@ fn general(app: &App) -> Vec<Element<'_, Message>> {
 }
 
 /// 詳細設定: closed at first, under a section's card.
-fn advanced<'a>(open: bool, rows: Vec<Element<'a, Message>>) -> Element<'a, Message> {
-    let summary = button(
-        row![
-            container(theme::plain(t("advanced"), tokens::CAPTION).font(theme::SANS_MEDIUM)).width(Length::Fill),
-            icon(if open { Icon::ChevronDown } else { Icon::ChevronRight }, 15.0, p().ink_muted),
-        ]
-        .align_y(Alignment::Center),
-    )
-    .width(Length::Fill)
-    .padding([10.0, 0.0])
-    .on_press(msg(Msg::ToggleAdvanced))
-    .style(|_, status| button::Style {
-        text_color: if matches!(status, button::Status::Hovered | button::Status::Pressed) {
-            p().ink
-        } else {
-            p().ink_muted
-        },
-        ..button::Style::default()
-    });
-    let mut col = Column::new().push(summary);
+fn advanced(open: bool, rows: Vec<El>) -> El {
+    let ink = p().ink;
+    let summary = clickable(Some(msg(Msg::ToggleAdvanced)), "advanced")
+        .flex()
+        .items_center()
+        .w_full()
+        .py(px(10.0))
+        .text_color(p().ink_muted)
+        .hover(move |s| s.text_color(ink))
+        .child(theme::plain(t("advanced"), tokens::CAPTION).medium().flex_1())
+        .child(icon(if open { Icon::ChevronDown } else { Icon::ChevronRight }, 15.0, p().ink_muted));
+    let mut c = col().w_full().child(summary);
     if open {
-        col = col.push(hairline());
+        c = c.child(hairline());
         let n = rows.len();
         for (i, r) in rows.into_iter().enumerate() {
-            col = col.push(r);
+            c = c.child(r);
             if i + 1 < n {
-                col = col.push(hairline());
+                c = c.child(hairline());
             }
         }
     }
-    container(col)
-        .width(Length::Fill)
-        .padding([0.0, 14.0])
-        .style(|_| container::Style {
-            background: Some(p().surface_raised.into()),
-            border: Border { color: p().border, width: 1.0, radius: tokens::RADIUS_LG.into() },
-            ..container::Style::default()
-        })
-        .into()
+    c.px(px(14.0))
+        .bg(p().surface_raised)
+        .border_1()
+        .border_color(p().border)
+        .rounded(px(tokens::RADIUS_LG))
+        .into_any_element()
 }
 
-fn slider_row<'a>(
-    label: String,
-    range: std::ops::RangeInclusive<f32>,
-    step: f32,
-    value: f32,
-    which: Slider,
-) -> Element<'a, Message> {
-    let bar = slider(range, value, move |v| msg(Msg::Slide(which, v)))
-        .step(step)
-        .on_release(msg(Msg::SlideDone(which)))
-        .style(|_, status| {
-            let p = p();
-            let active = matches!(status, slider::Status::Hovered | slider::Status::Dragged);
-            slider::Style {
-                rail: slider::Rail {
-                    backgrounds: (p.accent.into(), p.border.into()),
-                    width: 4.0,
-                    border: Border { radius: 2.0.into(), ..Border::default() },
-                },
-                handle: slider::Handle {
-                    shape: slider::HandleShape::Rectangle { width: 12, border_radius: 4.0.into() },
-                    background: (if active { p.accent_hover } else { p.accent }).into(),
-                    border_width: 2.0,
-                    border_color: p.surface_raised,
-                },
-            }
-        });
-    field(label, bar)
+/// A value on a scale, stepped with − and + and saved at each step; a bar shows where it sits.
+fn slider_row(label: String, range: std::ops::RangeInclusive<f32>, step: f32, value: f32, which: Slider) -> El {
+    let (lo, hi) = (*range.start(), *range.end());
+    // Steps from the bottom of the range, so repeated presses don't drift off the grid.
+    let at = |n: f32| (lo + n * step).clamp(lo, hi);
+    let n = ((value - lo) / step).round();
+    let down = (value > lo).then(|| msg(Msg::Slide(which, at(n - 1.0))));
+    let up = (value < hi).then(|| msg(Msg::Slide(which, at(n + 1.0))));
+    let frac = ((value - lo) / (hi - lo)).clamp(0.0, 1.0);
+    let bar = div()
+        .flex_1()
+        .h(px(4.0))
+        .rounded(px(2.0))
+        .bg(p().border)
+        .child(div().h_full().w(gpui_kit::relative(frac)).rounded(px(2.0)).bg(p().accent));
+    let r = row().w_full().gap(px(10.0)).child(btn("−", Variant::Secondary, Size::Sm, down)).child(bar).child(btn(
+        "+",
+        Variant::Secondary,
+        Size::Sm,
+        up,
+    ));
+    field(label, r)
 }
 
-fn audio(app: &App) -> Vec<Element<'_, Message>> {
+fn audio(app: &App) -> Vec<El> {
     let s = &app.settings;
     let ui = &app.settings_ui;
     let mut mics = vec![opt(None, t("defaultDevice"))];
@@ -599,35 +569,10 @@ fn audio(app: &App) -> Vec<Element<'_, Message>> {
     ]
 }
 
-fn transcription(app: &App) -> Vec<Element<'_, Message>> {
+fn transcription(app: &App, ui: &mut Ui) -> Vec<El> {
     let s = &app.settings;
     let gpu = app.info.gpu_compiled;
-    let vocab = text_editor(&app.settings_ui.vocab)
-        .on_action(|a| msg(Msg::Vocab(a)))
-        .font(theme::SANS)
-        .size(tokens::BODY_SMALL.size)
-        .height(96)
-        .padding([tokens::SPACE_2, 10.0])
-        .style(|theme, status| {
-            let input = input_style(
-                theme,
-                match status {
-                    text_editor::Status::Focused { is_hovered } => {
-                        iced::widget::text_input::Status::Focused { is_hovered }
-                    }
-                    text_editor::Status::Hovered => iced::widget::text_input::Status::Hovered,
-                    text_editor::Status::Disabled => iced::widget::text_input::Status::Disabled,
-                    text_editor::Status::Active => iced::widget::text_input::Status::Active,
-                },
-            );
-            text_editor::Style {
-                background: input.background,
-                border: input.border,
-                placeholder: input.placeholder,
-                value: input.value,
-                selection: input.selection,
-            }
-        });
+    let vocab = ui.input(Field::new(VOCAB, &app.settings_ui.vocab, |v| msg(Msg::Vocab(v))).multi_line());
     vec![
         section(
             None,
@@ -658,7 +603,7 @@ fn transcription(app: &App) -> Vec<Element<'_, Message>> {
     ]
 }
 
-fn screenshots(app: &App) -> Vec<Element<'_, Message>> {
+fn screenshots(app: &App) -> Vec<El> {
     let s = &app.settings;
     let targets = [ScreenshotTarget::AppWindow, ScreenshotTarget::CursorMonitor, ScreenshotTarget::AllMonitors];
     vec![section(
@@ -676,13 +621,13 @@ fn screenshots(app: &App) -> Vec<Element<'_, Message>> {
     )]
 }
 
-fn hotkeys(app: &App) -> Vec<Element<'_, Message>> {
+fn hotkeys(app: &App) -> Vec<El> {
     vec![section(None, Hotkey::ALL.iter().map(|h| hotkey_input(app, *h)).collect())]
 }
 
 /// A shortcut: オフ until its button is pressed and then the keys; オフにする turns it off again.
 /// Why Windows refused one shows under it.
-pub fn hotkey_input(app: &App, which: Hotkey) -> Element<'_, Message> {
+pub fn hotkey_input(app: &App, which: Hotkey) -> El {
     let value = which.value(&app.settings.hotkeys);
     let recording = app.settings_ui.recording == Some(which);
     let set = !value.is_empty() && !recording;
@@ -693,61 +638,64 @@ pub fn hotkey_input(app: &App, which: Hotkey) -> Element<'_, Message> {
     } else {
         value.to_string()
     };
-    let text = line(shown, tokens::BODY_SMALL, if set || recording { p().ink } else { p().ink_muted }).font(if set {
-        theme::MONO
-    } else {
-        theme::SANS
-    });
-    let keys = button(container(text).center_y(Length::Fill))
-        .width(Length::Fill)
-        .height(32)
-        .padding([0.0, 10.0])
-        .on_press(msg(Msg::Record(which)))
-        .style(move |_, status| {
-            let p = p();
-            let border = if recording {
-                p.accent
-            } else if matches!(status, button::Status::Hovered | button::Status::Pressed) {
-                p.border_strong
-            } else {
-                p.border
-            };
-            button::Style {
-                background: Some(p.surface_sunken.into()),
-                text_color: p.ink,
-                border: Border { color: border, width: 1.0, radius: tokens::RADIUS_MD.into() },
-                ..button::Style::default()
-            }
-        });
-    let mut r = row![keys].spacing(6).align_y(Alignment::Center);
+    let text = line(shown, tokens::BODY_SMALL, if set || recording { p().ink } else { p().ink_muted });
+    let text = if set { text.mono() } else { text };
+    let pal = p();
+    let strong = pal.border_strong;
+    let mut keys = clickable(Some(msg(Msg::Record(which))), ("hotkey", which.key()))
+        .flex()
+        .items_center()
+        .flex_1()
+        .min_w_0()
+        .h(px(32.0))
+        .px(px(10.0))
+        .bg(pal.surface_sunken)
+        .border_1()
+        .border_color(if recording { pal.accent } else { pal.border })
+        .rounded(px(tokens::RADIUS_MD))
+        .child(text);
+    if !recording {
+        keys = keys.hover(move |s| s.border_color(strong));
+    }
+    let mut r = row().w_full().gap(px(6.0)).child(keys);
     if set {
-        r = r.push(btn(t("hotkeyClear"), Variant::Secondary, Size::Md, Some(msg(Msg::ClearHotkey(which)))));
+        r = r.child(btn(t("hotkeyClear"), Variant::Secondary, Size::Md, Some(msg(Msg::ClearHotkey(which)))));
     }
-    let mut col = Column::new().push(r).spacing(tokens::SPACE_1);
+    let mut c = col().w_full().gap(px(tokens::SPACE_1)).child(r);
     if let Some(error) = app.info.hotkey_errors.get(which.key()) {
-        col = col.push(
-            theme::t(tf("hotkeyFailed", &[("error", error)]), tokens::CAPTION, p().danger).font(theme::SANS_MEDIUM),
-        );
+        c = c.child(theme::t(tf("hotkeyFailed", &[("error", error)]), tokens::CAPTION, p().danger).medium());
     }
-    field(t(which.label_key()), col)
+    field(t(which.label_key()), c)
 }
 
-fn output(app: &App) -> Vec<Element<'_, Message>> {
+fn output(app: &App, ui: &mut Ui) -> Vec<El> {
     let s = &app.settings;
-    let root = iced::widget::text_input("", &s.output.root)
-        .font(theme::SANS)
-        .size(tokens::CAPTION.size)
-        .padding([7.0, 10.0])
-        .style(input_style);
-    let folder = row![root, btn(t("change"), Variant::Secondary, Size::Md, Some(msg(Msg::PickFolder)))]
-        .spacing(6)
-        .align_y(Alignment::Center);
+    let pal = p();
+    let root = line(s.output.root.clone(), tokens::CAPTION, pal.ink)
+        .flex_1()
+        .min_w_0()
+        .py(px(7.0))
+        .px(px(10.0))
+        .bg(pal.surface_sunken)
+        .border_1()
+        .border_color(pal.border)
+        .rounded(px(tokens::RADIUS_MD));
+    let folder = row().w_full().gap(px(6.0)).child(root).child(btn(
+        t("change"),
+        Variant::Secondary,
+        Size::Md,
+        Some(msg(Msg::PickFolder)),
+    ));
     let template = app.settings_ui.template.as_deref().unwrap_or(&s.output.title_template);
-    let template = column![
-        crate::widgets::input("", template, |v| msg(Msg::Template(v))).on_submit(msg(Msg::Leave)),
-        line(tf("titleTemplateHelp", &[("app", &"{app}"), ("date", &"{date}")]), tokens::CAPTION, p().ink_muted),
-    ]
-    .spacing(6);
+    let template = col()
+        .w_full()
+        .gap(px(6.0))
+        .child(ui.input(Field::new(TEMPLATE, template, |v| msg(Msg::Template(v))).on_submit(msg(Msg::Leave))))
+        .child(line(
+            tf("titleTemplateHelp", &[("app", &"{app}"), ("date", &"{date}")]),
+            tokens::CAPTION,
+            p().ink_muted,
+        ));
     let labels = [(LabelMode::Auto, "labelsAuto"), (LabelMode::On, "labelsOn"), (LabelMode::Off, "labelsOff")];
     vec![
         section(None, vec![field(t("outputRoot"), folder), field(t("titleTemplate"), template)]),
@@ -852,96 +800,5 @@ mod tests {
         let _ = update(&mut app, Msg::Record(Hotkey::Mark));
         let _ = update(&mut app, Msg::Key(key("KeyK", true, true, false)));
         assert_eq!(app.settings_ui.recording, None);
-    }
-}
-
-#[cfg(test)]
-mod previews {
-    use chidori_core::events::DownloadPayload;
-    use chidori_core::models::catalog;
-    use chidori_core::models::manager::ModelEntry;
-    use chidori_core::settings::BenchmarkRecord;
-
-    use super::*;
-    use crate::app::View;
-    use crate::preview::{app, shot};
-
-    pub fn catalog_entries() -> Vec<ModelEntry> {
-        catalog::all()
-            .iter()
-            .map(|e| ModelEntry {
-                entry: e.clone(),
-                installed: false,
-                selected: false,
-                recommended: e.id == "turbo-q5",
-                partial_bytes: 0,
-                downloading: false,
-                benchmark: None,
-            })
-            .collect()
-    }
-
-    fn at(tab: SettingsTab) -> (App, tempfile::TempDir) {
-        let (mut app, dir) = app();
-        app.view = View::Settings;
-        app.settings_tab = tab;
-        app.settings_ui.vocab = text_editor::Content::with_text(&app.settings.vocabulary.join("\n"));
-        (app, dir)
-    }
-
-    #[test]
-    #[ignore = "writes PNGs for review"]
-    fn preview_settings() {
-        let (mut app, _dir) = at(SettingsTab::Index);
-        app.settings.hotkeys.toggle = "Ctrl+Shift+R".into();
-        app.settings.output.root = r"C:\Users\me\Documents\Chidori".into();
-        app.models = catalog_entries();
-        shot(&app, "settings-index", crate::app::EXPANDED);
-
-        let (app, _dir) = at(SettingsTab::General);
-        shot(&app, "settings-general", crate::app::EXPANDED);
-
-        let (mut app, _dir) = at(SettingsTab::Audio);
-        app.settings_ui.advanced = true;
-        shot(&app, "settings-audio", crate::app::EXPANDED);
-
-        let (mut app, _dir) = at(SettingsTab::Transcription);
-        app.settings_ui.vocab = text_editor::Content::with_text("Chidori\nwhisper.cpp");
-        shot(&app, "settings-transcription", crate::app::EXPANDED);
-
-        let (app, _dir) = at(SettingsTab::Screenshots);
-        shot(&app, "settings-screenshots", crate::app::EXPANDED);
-
-        let (mut app, _dir) = at(SettingsTab::Hotkeys);
-        app.settings.hotkeys.toggle = "Ctrl+Shift+R".into();
-        app.settings.hotkeys.screenshot = "Ctrl+Shift+S".into();
-        app.settings_ui.recording = Some(Hotkey::Mark);
-        app.info.hotkey_errors.insert("screenshot".into(), "Ctrl+Shift+S is taken".into());
-        shot(&app, "settings-hotkeys", crate::app::EXPANDED);
-
-        let (mut app, _dir) = at(SettingsTab::Output);
-        app.settings.output.root = r"C:\Users\me\Documents\Chidori".into();
-        shot(&app, "settings-output", crate::app::EXPANDED);
-
-        let (mut app, _dir) = at(SettingsTab::Models);
-        let mut models = catalog_entries();
-        models[0].installed = true;
-        models[0].selected = true;
-        models[0].benchmark = Some(BenchmarkRecord { seconds: 2.5, tier: "comfortable".into(), gpu: true });
-        let small = models.iter().position(|m| m.entry.id == "small-q5").unwrap();
-        models[small].downloading = true;
-        app.models_ui.progress.insert(
-            "small-q5".into(),
-            DownloadPayload {
-                id: "small-q5".into(),
-                received: models[small].entry.size_bytes / 3,
-                total: models[small].entry.size_bytes,
-                bytes_per_sec: 4.2e6,
-                phase: "downloading",
-                error: None,
-            },
-        );
-        app.models = models.clone();
-        shot(&app, "settings-models", crate::app::EXPANDED);
     }
 }

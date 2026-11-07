@@ -4,10 +4,10 @@
 use std::collections::HashMap;
 use std::time::{Duration, Instant};
 
+use crate::paint::Picture;
 use chidori_core::audio::source::{AppLevel, AudioApp, Device};
 use chidori_core::recorder::{AppRef, SourceConfig};
 use chidori_core::settings::{Settings, SourceMode};
-use iced::widget::image;
 
 use super::line::{height_of, settle};
 
@@ -27,7 +27,7 @@ pub struct SourceChoice {
     pub mic_device_id: Option<String>,
     pub apps: Vec<AudioApp>,
     /// Each app's icon, decoded once from its data URL.
-    pub icons: HashMap<String, image::Handle>,
+    pub icons: HashMap<String, Picture>,
     pub devices: Vec<Device>,
     pub loading_apps: bool,
 }
@@ -62,7 +62,7 @@ impl SourceChoice {
         self.loading_apps = false;
     }
 
-    pub fn icon_of(&self, exe: &str) -> Option<&image::Handle> {
+    pub fn icon_of(&self, exe: &str) -> Option<&Picture> {
         self.icons.get(exe)
     }
 
@@ -96,13 +96,13 @@ impl SourceChoice {
     }
 }
 
-fn icon_from_data_url(url: &str) -> Option<image::Handle> {
+fn icon_from_data_url(url: &str) -> Option<Picture> {
     use base64::Engine as _;
     let (_, b64) = url.split_once(";base64,")?;
     let bytes = base64::engine::general_purpose::STANDARD.decode(b64).ok()?;
     let img = ::image::load_from_memory(&bytes).ok()?.into_rgba8();
     let (w, h) = img.dimensions();
-    Some(image::Handle::from_rgba(w, h, img.into_raw()))
+    Picture::from_rgba(w, h, img.into_raw())
 }
 
 /// One step of a wave: ten a second, like the recording's line.

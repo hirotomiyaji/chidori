@@ -10,7 +10,27 @@ found a reason to deviate.
   a core while recording (0.5.1, measured 2026-10-28 with the window in view). A spike of the
   recording window in Iced used 12 MB drawing on the CPU (tiny-skia) and about 119 MB plus 89 MB
   of GPU memory through wgpu (Vulkan; DX12 69 MB).
-- **The UI draws on the GPU through DirectX 12** (wgpu, `WGPU_BACKEND=dx12` set at startup
+- **`--show-in-captures`** makes the window show in screenshots and screen sharing for that run,
+  whatever 設定's 「画面共有・スクショに映さない」 says (on by default), and saves nothing. It is
+  for capturing the app itself, in testing and docs.
+- **GPUI instead of Iced** (after 0.6). GPUI (Zed's UI framework, through `gpui-kit`, which pins
+  a GPUI snapshot and adds `gpui-component`'s text boxes, scrollbars and tooltips) replaces Iced.
+  The app keeps Iced's shape: one `App`, `Message`s handled in `App::update`, and `Task`s it
+  hands back (`task.rs`); `ui.rs` turns GPUI's events into those messages, queued and handled
+  after GPUI's event, so an update never runs inside another. Text boxes are GPUI entities, kept
+  between frames by key. On Windows GPUI draws with DirectX 11, so the wgpu backend measurements
+  below are history. Where GPUI differs:
+  - The window's minimum size and resizability are fixed when it opens, so the compact layout's
+    fixed size is kept by putting the window back to it whenever it is resized.
+  - The borderless title bar is a native drag area (`HTCAPTION`), so dragging and Aero Snap work
+    as on any window.
+  - Keys reach the screens through `observe_keystrokes`, after GPUI's own handling (a text box
+    has had its key by then).
+  - Dropdowns in 設定 are drawn by the app (`widgets::select`), as the source lists already were.
+  - 設定's two sliders became − and + steppers, saved at each step, until the redesign.
+  - The PNG preview tests went: GPUI has no headless renderer. Their fixtures stayed where tests
+    use them.
+- **The UI drew on the GPU through DirectX 12** (under Iced) (wgpu, `WGPU_BACKEND=dx12` set at startup
   unless already set). Measured in the finished app (release, turbo-q5, window in view):
 
   | | Idle RAM | Recording RAM | Recording CPU |
@@ -24,11 +44,11 @@ found a reason to deviate.
   45 MB more than DX12 for the same frames. tiny-skia is lighter still and no slower here; GPU
   drawing was the maintainer's choice. tiny-skia stays compiled in as the fallback where wgpu
   can't start (no GPU driver), and `ICED_BACKEND=tiny-skia` picks it by hand.
-- **A Cargo workspace**: `crates/core` (no UI, no windowing), `crates/app` (the Iced UI and the
+- **A Cargo workspace**: `crates/core` (no UI, no windowing), `crates/app` (the GPUI UI and the
   shell: tray, hotkeys, popup menus, dialogs, updater) and `xtask` (the installer build). The core
   keeps the module layout it had under Tauri; Tauri's `AppHandle` became `host::AppHandle`, its
   JSON events typed `events::Event`s, and its commands `ops.rs` functions.
-- **Exact pins.** Drift-prone crates (`iced`, `tray-icon`, `global-hotkey`, `rfd`, `cpal`,
+- **Exact pins.** Drift-prone crates (`gpui-kit`, `tray-icon`, `global-hotkey`, `rfd`, `cpal`,
   `whisper-rs`, `wasapi`, `xcap`, `earshot`, `rubato`, `ulid`, `typst*`, `zip`) are pinned with
   `=`; everything else by `Cargo.lock`, which is committed.
 - **whisper.cpp optimization on MSVC.** The `cmake` crate replaces CMake's per-config flags with
@@ -507,10 +527,10 @@ found a reason to deviate.
   meetings), the waves and spinners 20 times, toasts 10; otherwise it draws only when something
   changes. Minimized or in the tray nothing ticks at all, and the core stops reading the apps'
   meters (`host::set_ui_hidden`), while its events still arrive, so the transcript keeps up.
-- **The transcript builds only the rows in view** (`screens/main/transcript.rs`): rows not yet
-  drawn get an estimated height and report their real one once drawn, inside one `lazy` keyed on
-  the transcript's version, so a line frame never rebuilds the transcript. Iced lays out what it
-  is given every frame: in the spike, 2000 plain rows cost 13% of a core and 71 MB.
+- **The transcript builds only the rows in view** (`screens/main/transcript.rs`): GPUI's `list`
+  measures and draws only the rows on screen, and the list's rows are rebuilt only when the
+  transcript changes, so a line frame never rebuilds the transcript. (Under Iced, which lays out
+  what it is given every frame, 2000 plain rows cost 13% of a core and 71 MB in the spike.)
 - **The transcript runs on under the deck to its line.** The line lies 30 px into the deck; if
   the transcript stopped at the deck's top, text would vanish at an invisible edge above the
   wave. Once there is a transcript the expanded deck reaches up under it by that much and is
@@ -563,11 +583,11 @@ found a reason to deviate.
   its window. A pick comes back as an id, routed by its prefix to the screen that opened it.
 - **The source lists are drawn**, not native (`screens/main/popover.rs`), because they show each
   app's icon and live wave. The compact picker opens over the whole window under the title bar.
-- **No screen reader or keyboard navigation yet.** Iced 0.14 exposes nothing to screen readers
-  and moves keyboard focus only between text boxes, so the web UI's `aria-label`s and tab order
-  have no counterpart. Icon buttons keep their names as tooltips; Escape, Enter and the hotkeys
-  work. Revisit when Iced ships accessibility.
-- **Text boxes save on Enter** (and the check button): Iced has no event for a box losing focus.
+- **No screen reader or keyboard navigation yet.** The app gives GPUI no accessibility labels or
+  tab order yet, so the web UI's `aria-label`s and tab order have no counterpart. Icon buttons
+  keep their names as tooltips; Escape, Enter and the hotkeys work. Revisit in the redesign.
+- **Text boxes save on Enter** (and the check button), as they did under Iced, which had no event
+  for a box losing focus.
   設定's word list and title format also save at the next click anywhere.
 - **One primary per view, strictly**: 使う in the model list and テストを開始 in the wizard's mic
   step are secondary buttons, since a list can hold several models and 次へ is the step's primary.

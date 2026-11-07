@@ -5,8 +5,7 @@ use std::time::Duration;
 
 use chidori_core::error::AppError;
 use chidori_core::ops::{self, SessionView};
-use iced::widget::{Space, column, container, stack};
-use iced::{Element, Length, Task};
+use gpui_kit::{IntoElement, ParentElement, Styled, div, px};
 
 use super::main_view::deck::{self, DeckAnim, DeckCtx, DeckMsg, DeckState};
 use super::main_view::playback::{Player, Status};
@@ -15,8 +14,10 @@ use super::main_view::{headers, rows};
 use crate::app::{App, Level, Message, View, call};
 use crate::i18n::t;
 use crate::model::transcript::Transcript;
+use crate::task::Task;
 use crate::theme::{line, p, tokens};
-use crate::widgets::spinner;
+use crate::ui::{El, KeyPress, Ui};
+use crate::widgets::{col, spinner};
 
 pub struct State {
     pub transcript: Transcript,
@@ -32,7 +33,7 @@ impl Default for State {
     fn default() -> Self {
         Self {
             transcript: Transcript::default(),
-            list: ListState::new("viewer-transcript", "viewer-editor", "viewer-title"),
+            list: ListState::new("viewer"),
             deck: DeckAnim::default(),
             player: Player::default(),
             playing_ms: None,
@@ -58,7 +59,7 @@ fn wrap_deck(m: DeckMsg) -> Message {
     Message::Viewer(Msg::Deck(m))
 }
 
-pub fn update(app: &mut App, msg: Msg) -> Task<Message> {
+pub fn update(app: &mut App, msg: Msg) -> Task {
     match msg {
         Msg::Loaded(id, r) => {
             if app.viewing_session.as_deref() != Some(id.as_str()) {
@@ -82,7 +83,7 @@ pub fn update(app: &mut App, msg: Msg) -> Task<Message> {
         Msg::List(m) => {
             let core = app.core.clone();
             let v = &mut app.viewer;
-            transcript::update(&core, &mut v.list, &mut v.transcript, m, wrap_list, false, true)
+            transcript::update(&core, &mut v.list, &mut v.transcript, m, wrap_list, true)
         }
         Msg::Deck(DeckMsg::Seek(ms)) => update(app, Msg::List(ListMsg::Seek(ms))),
         Msg::Deck(DeckMsg::Play) => {
@@ -140,11 +141,11 @@ fn stop(app: &mut App) {
     app.viewer.list.playing = None;
 }
 
-pub fn on_menu(_app: &mut App, _rest: &str) -> Task<Message> {
+pub fn on_menu(_app: &mut App, _rest: &str) -> Task {
     Task::none()
 }
 
-pub fn open(app: &mut App, id: String) -> Task<Message> {
+pub fn open(app: &mut App, id: String) -> Task {
     stop(app);
     let v = &mut app.viewer;
     v.transcript.clear();
@@ -152,19 +153,17 @@ pub fn open(app: &mut App, id: String) -> Task<Message> {
     v.list.stay();
     v.failed = false;
     v.deck.forget();
-    let snap = iced::widget::operation::snap_to(v.list.id.clone(), iced::widget::operation::RelativeOffset::START);
-    let load = call(
+    call(
         app,
         {
             let id = id.clone();
             move |c| ops::get_session(c, &id).map(Box::new)
         },
         move |r| Message::Viewer(Msg::Loaded(id, r)),
-    );
-    Task::batch([load, snap])
+    )
 }
 
-pub fn tick(app: &mut App) -> Task<Message> {
+pub fn tick(app: &mut App) -> Task {
     if app.view != View::Session {
         app.viewer.deck.forget();
     }
@@ -175,38 +174,51 @@ pub fn animating(app: &App) -> bool {
     app.view == View::Session && app.viewer.deck.moving(app.now)
 }
 
-/// Escape closes what is open; while playing, the playhead steps four times a second.
-pub fn subscription(app: &App) -> iced::Subscription<Message> {
+/// Keeps the deck fresh for when the view shows again.
+pub fn housekeeping(app: &App) {
     if app.view != View::Session {
         app.viewer.deck.forget();
-        return iced::Subscription::none();
     }
-    let mut subs = vec![iced::keyboard::listen().filter_map(|e| match e {
-        iced::keyboard::Event::KeyPressed {
-            key: iced::keyboard::Key::Named(iced::keyboard::key::Named::Escape),
-            ..
-        } => Some(Message::Viewer(Msg::Escape)),
-        _ => None,
-    })];
-    if app.viewer.player.playing() && !app.hidden {
-        subs.push(iced::time::every(Duration::from_millis(250)).map(|_| Message::Viewer(Msg::PlayTick)));
-    }
-    if app.viewer.list.marked.is_some() {
-        subs.push(iced::time::every(transcript::MARK_FOR).map(|_| Message::Viewer(Msg::List(ListMsg::Unmark))));
-    }
-    iced::Subscription::batch(subs)
 }
 
-pub fn view(app: &App) -> Element<'_, Message> {
+/// Escape closes what is open.
+pub fn on_key(app: &App, key: &KeyPress) -> Option<Message> {
+    (app.view == View::Session && key.code == "Escape").then_some(Message::Viewer(Msg::Escape))
+}
+
+/// While playing, the playhead steps four times a second.
+pub fn timers(app: &App) -> Vec<(Duration, Message)> {
+    let mut t = Vec::new();
+    if app.view != View::Session {
+        return t;
+    }
+    if app.viewer.player.playing() && !app.hidden {
+        t.push((Duration::from_millis(250), Message::Viewer(Msg::PlayTick)));
+    }
+    if app.viewer.list.marked.is_some() {
+        t.push((transcript::MARK_FOR, Message::Viewer(Msg::List(ListMsg::Unmark))));
+    }
+    t
+}
+
+fn select(app: &App) -> (&Transcript, &ListState) {
+    (&app.viewer.transcript, &app.viewer.list)
+}
+
+fn header(app: &App) -> El {
+    headers::session_header(app, &app.viewer.transcript, &app.viewer.list, wrap_list)
+}
+
+pub fn view(app: &App, ui: &mut Ui) -> El {
     let v = &app.viewer;
     let tr = &v.transcript;
     if tr.session_id.is_none() {
-        let body: Element<'_, Message> = if v.failed {
-            line(t("loadFailed"), tokens::BODY_SMALL, p().ink_muted).into()
+        let body: El = if v.failed {
+            line(t("loadFailed"), tokens::BODY_SMALL, p().ink_muted).into_any_element()
         } else {
             spinner(20.0, app.now)
         };
-        return container(body).center(Length::Fill).into();
+        return div().size_full().flex().items_center().justify_center().child(body).into_any_element();
     }
     v.deck.observe(DeckState::Review, 0);
     let player = tr.folder.is_some() && !tr.audio.is_empty();
@@ -223,24 +235,23 @@ pub fn view(app: &App) -> Element<'_, Message> {
         wrap: wrap_deck,
     };
     let deck_el = deck::view(ctx);
-    let (header, header_key) = headers::session_header(app, tr, &v.list, wrap_list);
-    let list = transcript::view(Ctx {
+    let list = transcript::view(
         app,
-        tr,
-        list: &v.list,
-        live: false,
-        editable: true,
-        header: Some(header),
-        header_key,
-        playable: player,
-        wrap: wrap_list,
-        under: LINE_Y,
-    });
-    stack![
-        column![container(list).height(Length::Fill), Space::new().height(deck::EXPANDED.height - LINE_Y)],
-        column![Space::new().height(Length::Fill), deck_el],
-    ]
-    .width(Length::Fill)
-    .height(Length::Fill)
-    .into()
+        Ctx {
+            select,
+            live: false,
+            editable: true,
+            header: Some(header as fn(&App) -> El),
+            playable: player,
+            wrap: wrap_list,
+            under: LINE_Y,
+        },
+        ui,
+    );
+    div()
+        .relative()
+        .size_full()
+        .child(div().absolute().top_0().left_0().right_0().bottom(px(deck::EXPANDED.height - LINE_Y)).child(list))
+        .child(col().absolute().inset_0().justify_end().child(deck_el))
+        .into_any_element()
 }

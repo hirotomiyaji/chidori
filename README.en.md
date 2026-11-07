@@ -85,7 +85,7 @@ To change the app's language later: Settings → General → Language. If your m
 
 ## For developers
 
-All Rust: the UI is [Iced](https://iced.rs) (`crates/app`), and capture, transcription, sessions and export are `crates/core`, with whisper.cpp (`whisper-rs`) and WASAPI capture. The full spec is [AppSpec.md](AppSpec.md); design choices are in [docs/DECISIONS.md](docs/DECISIONS.md).
+All Rust: the UI is [GPUI](https://www.gpui.rs) through `gpui-kit` (`crates/app`), and capture, transcription, sessions and export are `crates/core`, with whisper.cpp (`whisper-rs`) and WASAPI capture. The full spec is [AppSpec.md](AppSpec.md); design choices are in [docs/DECISIONS.md](docs/DECISIONS.md).
 
 ### Prerequisites (Windows 10/11 x64)
 
@@ -100,8 +100,9 @@ All Rust: the UI is [Iced](https://iced.rs) (`crates/app`), and capture, transcr
 cargo run -p chidori                          # CPU build
 cargo run -p chidori --features gpu-vulkan    # Vulkan build: set CARGO_TARGET_DIR=%USERPROFILE%\.kt first
 cargo test --workspace
-cargo test -p chidori preview -- --ignored --test-threads 1   # draws every screen to <target>/previews/
 ```
+
+The window keeps itself out of screenshots and screen sharing by default (設定 › スクリーンショット). To capture the app itself, launch it with `--show-in-captures` (for example `cargo run -p chidori -- --show-in-captures`): that run shows in captures without changing the setting.
 
 Vulkan builds need a short target folder: whisper.cpp's shader build otherwise passes Windows' 260-character path limit.
 

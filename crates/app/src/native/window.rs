@@ -1,4 +1,4 @@
-//! What Iced leaves to the platform: the borderless window's shadow and corners, keeping it out
+//! What GPUI leaves to the platform: the borderless window's shadow and corners, keeping it out
 //! of screen captures, and one running copy of the app (FR-91).
 
 use crate::bridge::{self, UiEvent};
@@ -45,6 +45,70 @@ pub fn set_capture_excluded(hwnd: u64, excluded: bool) {
     }
     #[cfg(not(windows))]
     let _ = (hwnd, excluded);
+}
+
+#[cfg(windows)]
+fn win(hwnd: u64) -> windows::Win32::Foundation::HWND {
+    windows::Win32::Foundation::HWND(hwnd as isize as *mut _)
+}
+
+/// Shows the window (and brings it forward) or hides it to the tray. GPUI has no hidden state
+/// of its own, so the window is hidden the Win32 way.
+pub fn set_visible(hwnd: u64, visible: bool) {
+    #[cfg(windows)]
+    {
+        use windows::Win32::UI::WindowsAndMessaging::{SW_HIDE, SW_RESTORE, SW_SHOW, SetForegroundWindow, ShowWindow};
+        let h = win(hwnd);
+        // SAFETY: `hwnd` is the app's own live window.
+        unsafe {
+            if visible {
+                let _ = ShowWindow(h, SW_SHOW);
+                if is_minimized(hwnd) {
+                    let _ = ShowWindow(h, SW_RESTORE);
+                }
+                let _ = SetForegroundWindow(h);
+            } else {
+                let _ = ShowWindow(h, SW_HIDE);
+            }
+        }
+    }
+    #[cfg(not(windows))]
+    let _ = (hwnd, visible);
+}
+
+/// Whether the window is minimized or hidden: nothing on screen to draw for.
+pub fn is_minimized(hwnd: u64) -> bool {
+    #[cfg(windows)]
+    {
+        use windows::Win32::UI::WindowsAndMessaging::{IsIconic, IsWindowVisible};
+        let h = win(hwnd);
+        // SAFETY: `hwnd` is the app's own live window.
+        unsafe { IsIconic(h).as_bool() || !IsWindowVisible(h).as_bool() }
+    }
+    #[cfg(not(windows))]
+    {
+        let _ = hwnd;
+        false
+    }
+}
+
+/// Keeps the window above others, or not.
+pub fn set_topmost(hwnd: u64, on: bool) {
+    #[cfg(windows)]
+    {
+        use windows::Win32::UI::WindowsAndMessaging::{
+            HWND_NOTOPMOST, HWND_TOPMOST, SWP_NOACTIVATE, SWP_NOMOVE, SWP_NOSIZE, SetWindowPos,
+        };
+        let after = if on { HWND_TOPMOST } else { HWND_NOTOPMOST };
+        // SAFETY: `hwnd` is the app's own live window.
+        if let Err(e) =
+            unsafe { SetWindowPos(win(hwnd), Some(after), 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE) }
+        {
+            tracing::warn!("always on top: {e}");
+        }
+    }
+    #[cfg(not(windows))]
+    let _ = (hwnd, on);
 }
 
 /// Makes this the one running copy. A second launch signals the first, which shows its window,

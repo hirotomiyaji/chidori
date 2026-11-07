@@ -2,12 +2,12 @@
 //! baseline in the accent, 自分 below it in ink, screenshots as dots on the baseline. Small and
 //! still in 履歴's rows; the deck draws the same shape larger for a finished session.
 
-use iced::widget::canvas::{self, Frame, LineCap, LineJoin, Path, Stroke};
-use iced::{Color, Element, Length, Point, Rectangle, Renderer, Theme, mouse};
+use gpui_kit::{IntoElement, Styled, px};
 
-use crate::app::Message;
 use crate::model::line::{Shape, smooth};
-use crate::theme::p;
+use crate::paint::{Frame, LineCap, LineJoin, Path, Point, Stroke, canvas_el};
+use crate::theme::{Color, p};
+use crate::ui::El;
 
 /// Where a session's line lies in a box: its ends, baseline and how far each side reaches.
 #[derive(Debug, Clone, Copy)]
@@ -71,30 +71,14 @@ pub fn draw(frame: &mut Frame, l: &MapLine, base: f32, width: f32, fill: Option<
 const H: f32 = 30.0;
 const BASE: f32 = 15.0;
 
-struct Small<'a> {
-    shape: &'a Shape,
-    two: bool,
-}
-
-impl canvas::Program<Message> for Small<'_> {
-    type State = ();
-
-    fn draw(
-        &self,
-        _: &(),
-        renderer: &Renderer,
-        _: &Theme,
-        bounds: Rectangle,
-        _: mouse::Cursor,
-    ) -> Vec<canvas::Geometry> {
-        let mut frame = Frame::new(renderer, bounds.size());
-        let l = map_line(self.shape, bounds.width, MapGeometry { pad: 2.0, base: BASE, up: 10.0, down: 8.0 }, self.two);
-        draw(&mut frame, &l, BASE, 1.8, None, p().border);
-        vec![frame.into_geometry()]
-    }
-}
-
 /// A past session's line, still and small (履歴's rows): 30 px high, the full width.
-pub fn small(shape: &Shape, two: bool) -> Element<'_, Message> {
-    canvas::Canvas::new(Small { shape, two }).width(Length::Fill).height(H).into()
+pub fn small(shape: &Shape, two: bool) -> El {
+    let shape = shape.clone();
+    canvas_el(None, move |frame| {
+        let l = map_line(&shape, frame.width(), MapGeometry { pad: 2.0, base: BASE, up: 10.0, down: 8.0 }, two);
+        draw(frame, &l, BASE, 1.8, None, p().border);
+    })
+    .w_full()
+    .h(px(H))
+    .into_any_element()
 }

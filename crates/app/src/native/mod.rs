@@ -1,4 +1,4 @@
-//! Platform pieces Iced leaves to the app.
+//! Platform pieces GPUI leaves to the app.
 
 pub mod hotkeys;
 pub mod menu;

@@ -3,10 +3,8 @@
 //! pauses as gaps and screenshots as dots. Pure geometry, as path commands, so the deck can squeeze
 //! it towards the pen when it zooms out to the whole session.
 
-use iced::Point;
-use iced::widget::canvas::path::Builder;
-
 use crate::model::line::Sample;
+use crate::paint::{Builder, Point};
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum Cmd {

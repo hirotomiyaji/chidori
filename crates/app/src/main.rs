@@ -1,4 +1,4 @@
-//! Chidori: live transcription with local Whisper. The window is Iced; everything it shows comes
+//! Chidori: live transcription with local Whisper. The window is GPUI; everything it shows comes
 //! from `chidori-core`.
 
 // No console window in release builds.
@@ -11,10 +11,13 @@ mod i18n;
 mod icons;
 mod model;
 mod native;
+mod paint;
 #[cfg(test)]
 mod preview;
 mod screens;
+mod task;
 mod theme;
+mod ui;
 mod updater;
 mod widgets;
 
@@ -26,15 +29,14 @@ use chidori_core::host::{AppHandle, Paths};
 use chidori_core::state::{self, AppHost, AppState};
 use chidori_core::{asr, migrate, net, platform, recorder};
 
-fn main() -> iced::Result {
+fn main() {
     // Before anything touches Vulkan (section 8).
     asr::engine::disable_vulkan_implicit_layers();
-    draw_with_dx12();
     net::ensure_crypto_provider();
     bridge::init();
     // A second launch shows the running window and leaves (FR-91).
     if !native::window::single_instance() {
-        return Ok(());
+        return;
     }
     // Before anything opens a file in the app's folders.
     let migrated = migrate::app_folders();
@@ -80,20 +82,8 @@ fn main() -> iced::Result {
     }
     updater::check_on_launch(&core);
 
-    let result = app::run();
+    app::run();
     st.worker.shutdown();
-    result
-}
-
-/// The window draws through wgpu on DirectX 12 on Windows: through Vulkan it took about 45 MB
-/// more memory for the same frames (DECISIONS → Build and toolchain). Iced only reads the
-/// backend from `WGPU_BACKEND`, so it is set here unless the user set it; where DX12 can't start,
-/// Iced falls back to drawing on the CPU.
-fn draw_with_dx12() {
-    if cfg!(windows) && std::env::var_os("WGPU_BACKEND").is_none() {
-        // SAFETY: called first thing in `main`, before any other thread exists.
-        unsafe { std::env::set_var("WGPU_BACKEND", "dx12") };
-    }
 }
 
 /// Logs to `logs\chidori.log` (a new file each day, five kept) and, in dev builds, the console.
@@ -106,9 +96,7 @@ fn init_logging(paths: &Paths) -> Option<tracing_appender::non_blocking::WorkerG
     // (`CHIDORI_LOG=debug`) for a closer look.
     let filter = || {
         EnvFilter::try_from_env("CHIDORI_LOG").unwrap_or_else(|_| {
-            EnvFilter::new(
-                "info,whisper_rs=warn,wasapi=warn,reqwest=warn,wgpu_core=warn,wgpu_hal=warn,naga=warn,iced_wgpu=warn,                 iced_winit=warn",
-            )
+            EnvFilter::new("info,whisper_rs=warn,wasapi=warn,reqwest=warn,gpui=warn,gpui_pre=warn,gpui_component=warn")
         })
     };
     let file = tracing_appender::rolling::Builder::new()
