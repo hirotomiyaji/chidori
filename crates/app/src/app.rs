@@ -257,6 +257,20 @@ pub fn run() {
     });
 }
 
+/// `--show-in-captures`: the window shows in screenshots and screen recordings for this run,
+/// whatever 設定 says, so the app itself can be captured (testing, docs) without changing the
+/// user's setting.
+fn show_in_captures() -> bool {
+    static FLAG: std::sync::LazyLock<bool> =
+        std::sync::LazyLock::new(|| std::env::args().skip(1).any(|a| a == "--show-in-captures"));
+    *FLAG
+}
+
+/// Whether the window keeps out of screen captures: 設定's choice, unless the launch said otherwise.
+fn capture_excluded(settings: &Settings) -> bool {
+    settings.screenshot.exclude_self && !show_in_captures()
+}
+
 /// Where the window was last time (`window.json`), so it opens there again.
 fn saved_position() -> Option<Point> {
     let app = bridge::core()?;
@@ -446,7 +460,7 @@ impl App {
             Message::Hwnd(hwnd) => {
                 self.hwnd = Some(hwnd);
                 native::window::apply_chrome(hwnd);
-                native::window::set_capture_excluded(hwnd, self.settings.screenshot.exclude_self);
+                native::window::set_capture_excluded(hwnd, capture_excluded(&self.settings));
                 if self.settings.window.always_on_top {
                     native::window::set_topmost(hwnd, true);
                 }
@@ -597,7 +611,7 @@ impl App {
         if new.screenshot.exclude_self != old.screenshot.exclude_self
             && let Some(hwnd) = self.hwnd
         {
-            native::window::set_capture_excluded(hwnd, new.screenshot.exclude_self);
+            native::window::set_capture_excluded(hwnd, capture_excluded(new));
         }
     }
 

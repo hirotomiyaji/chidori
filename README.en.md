@@ -102,6 +102,8 @@ cargo run -p chidori --features gpu-vulkan    # Vulkan build: set CARGO_TARGET_D
 cargo test --workspace
 ```
 
+The window keeps itself out of screenshots and screen sharing by default (設定 › スクリーンショット). To capture the app itself, launch it with `--show-in-captures` (for example `cargo run -p chidori -- --show-in-captures`): that run shows in captures without changing the setting.
+
 Vulkan builds need a short target folder: whisper.cpp's shader build otherwise passes Windows' 260-character path limit.
 
 The integration harness (streaming accuracy and latency against fixture recordings) is described in `crates/core/tests/pipeline.rs` and [tests/fixtures/README.md](tests/fixtures/README.md).

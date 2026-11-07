@@ -10,6 +10,9 @@ found a reason to deviate.
   a core while recording (0.5.1, measured 2026-10-28 with the window in view). A spike of the
   recording window in Iced used 12 MB drawing on the CPU (tiny-skia) and about 119 MB plus 89 MB
   of GPU memory through wgpu (Vulkan; DX12 69 MB).
+- **`--show-in-captures`** makes the window show in screenshots and screen sharing for that run,
+  whatever 設定's 「画面共有・スクショに映さない」 says (on by default), and saves nothing. It is
+  for capturing the app itself, in testing and docs.
 - **GPUI instead of Iced** (after 0.6). GPUI (Zed's UI framework, through `gpui-kit`, which pins
   a GPUI snapshot and adds `gpui-component`'s text boxes, scrollbars and tooltips) replaces Iced.
   The app keeps Iced's shape: one `App`, `Message`s handled in `App::update`, and `Task`s it
