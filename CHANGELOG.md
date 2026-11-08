@@ -4,6 +4,8 @@ All notable changes are listed here. Versions follow [SemVer](https://semver.org
 
 ## [Unreleased]
 
+## [0.7.0] - 2026-11-08
+
 ### Changed
 
 - A new look. Greyscale with colour only for who is speaking (相手 coral, 自分 teal) and the red record dot, and no shadows. Recording shows an ink card with ON AIR, the title, the source, the timer and the live sound, over the transcript as speech bubbles: 相手 on the left, 自分 on the right. A finished session's card turns white with its play button and sound, and コピー, 書き出し and ⋯ sit in the bar below. The source is picked from two panels (相手 and 自分) on the start screen. 履歴 has a search pill, project chips and one panel per day; 設定 has section chips instead of a list. Tabs, chips, the chosen source, switches, new lines, toasts and the recording card move with one springy motion, and stay still when Windows' animation effects are off.

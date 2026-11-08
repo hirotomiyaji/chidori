@@ -3,7 +3,7 @@ resolver = "3"
 members = ["crates/core", "crates/app", "xtask"]
 
 [workspace.package]
-version = "0.6.0"
+version = "0.7.0"
 authors = ["Yusai Tajiri"]
 license = "MIT"
 edition = "2024"
