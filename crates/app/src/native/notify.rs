@@ -13,6 +13,15 @@ pub fn show(text: &str) {
             tracing::debug!("notification failed: {e}");
         }
     }
-    #[cfg(not(windows))]
+    #[cfg(target_os = "macos")]
+    {
+        // Notification Center through AppleScript: it needs no bundle or permission prompt.
+        let quoted = text.replace('\\', "\\\\").replace('"', "\\\"");
+        let script = format!("display notification \"{quoted}\" with title \"Chidori\"");
+        if let Err(e) = std::process::Command::new("/usr/bin/osascript").args(["-e", &script]).spawn() {
+            tracing::debug!("notification failed: {e}");
+        }
+    }
+    #[cfg(not(any(windows, target_os = "macos")))]
     let _ = text;
 }

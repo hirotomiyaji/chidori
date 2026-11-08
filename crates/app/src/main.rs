@@ -51,8 +51,9 @@ fn main() {
     let _log = init_logging(&paths);
     asr::engine::install_logging_hooks();
     tracing::info!(
-        "Chidori {} starting (Windows build {}, GPU backend compiled: {})",
+        "Chidori {} starting ({} {}, GPU backend compiled: {})",
         env!("CARGO_PKG_VERSION"),
+        if cfg!(target_os = "macos") { "macOS" } else { "Windows build" },
         platform::os_build(),
         asr::engine::gpu_compiled()
     );
@@ -63,6 +64,7 @@ fn main() {
     let core = AppHandle::new(paths, env!("CARGO_PKG_VERSION"), Arc::new(bridge::Events), Arc::new(bridge::AppShell));
     log_panics(core.clone());
     let worker = AsrWorker::spawn(Arc::new(AppHost { app: core.clone() }));
+    let _stop_worker = StopWorker(worker.clone());
     core.manage(AppState::new(&core, worker));
     bridge::set_core(core.clone());
     let st = core.state();
@@ -70,10 +72,19 @@ fn main() {
     let locale = st.settings.read().locale;
     i18n::set_locale(locale);
 
-    native::menu::init();
-    native::tray::create(locale);
-    native::hotkeys::init();
-    native::hotkeys::register_all(&core);
+    let native = {
+        let core = core.clone();
+        move || {
+            native::menu::init();
+            native::tray::create(locale);
+            native::hotkeys::init();
+            native::hotkeys::register_all(&core);
+        }
+    };
+    // On macOS the first NSApplication call fixes its class, and GPUI's must be its own: the tray,
+    // menus and hotkeys are made once GPUI runs.
+    #[cfg(not(target_os = "macos"))]
+    native();
     recorder::spawn_ticker(core.clone());
 
     if cpu_supported() {
@@ -84,8 +95,20 @@ fn main() {
     }
     updater::check_on_launch(&core);
 
-    app::run();
-    st.worker.shutdown();
+    #[cfg(target_os = "macos")]
+    app::run(native);
+    #[cfg(not(target_os = "macos"))]
+    app::run(|| {});
+}
+
+/// Stops the transcription worker when `main` ends, a panic included, so the Whisper model is
+/// freed before the process exits. On Metal, ggml aborts at exit if a model is still loaded.
+struct StopWorker(Arc<AsrWorker>);
+
+impl Drop for StopWorker {
+    fn drop(&mut self) {
+        self.0.shutdown();
+    }
 }
 
 /// Logs to `logs\chidori.log` (a new file each day, five kept) and, in dev builds, the console.

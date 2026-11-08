@@ -584,6 +584,30 @@ found a reason to deviate.
   folder (`ops::allowed_path`).
 - **TLS** uses rustls with the ring provider (installed at startup).
 
+## macOS (issue 6, step 1 and part of step 2)
+
+- **Builds.** `gpu-metal` (`whisper-rs/metal`) is the Mac GPU build. Cargo's `[env]` in
+  `.cargo/config.toml` cannot be limited to one target and carries MSVC flags for whisper.cpp,
+  so Mac builds source `scripts/macos-env.sh`, whose clang flags win over `[env]`.
+- **Capture through `cpal`'s Core Audio host** (`audio/mac/`), not ScreenCaptureKit: the mic is
+  an input stream, and システム全体 is `cpal`'s loopback stream on the default output, a Core
+  Audio process tap (macOS 14.6+). It needs no screen-recording permission, only the audio one,
+  and it adds no crate. Buffers carry Core Audio's host time, which is `mach_absolute_time`, and
+  `platform::qpc_now_100ns` reads the same clock on macOS, so section 7's placing by timestamp
+  holds. The callback never blocks Core Audio's real-time thread: a full queue drops the buffer
+  and logs it.
+- **Default devices (FR-15)** are polled once a second, as on Windows, with the same 1.5 s
+  settle; `cpal` only follows the default for output streams.
+- **One app's sound is not done yet.** `app_loopback_supported()` stays false on macOS, so the
+  picker disables apps the way Windows 10 does, and the app list is empty. A process tap per
+  app (with its helper processes) is the next step.
+- **The window** is hidden from captures with `NSWindow.sharingType = .none`, hidden to the
+  menu bar with `orderOut`, and kept on top with the floating level. Notifications go through
+  `osascript` (no bundle or permission needed). The single-instance check is Windows-only: a
+  `.app` is already single-instance through Launch Services.
+- **Display language** is the first of `defaults read -g AppleLanguages`.
+- **Kikitori migration** is Windows-only: Kikitori never shipped for macOS.
+
 ## Test assets
 
 - **Benchmark clip** `crates/app/resources/bench_ja.wav`: 10 s (4.0–14.0 s) of chapter 4 of the

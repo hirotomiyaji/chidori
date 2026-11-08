@@ -84,7 +84,21 @@ fn build(items: &[Item]) -> Vec<Box<dyn IsMenuItem>> {
 
 /// Shows a menu at a point in the window (logical pixels), or at the cursor. Blocks until the
 /// menu closes; the pick, if any, follows as an event.
+///
+/// On macOS the menu runs its own event loop, and AppKit keeps calling GPUI from inside it (the
+/// keyboard layout, redraws). Shown from within GPUI's update, those calls find the app already
+/// borrowed and panic, so there it opens on the main queue once the update is over.
 pub fn popup(hwnd: u64, items: &[Item], at: Option<crate::paint::Point>) {
+    #[cfg(target_os = "macos")]
+    {
+        let items = items.to_vec();
+        mac::after_this_event(Box::new(move || show(hwnd, &items, at)));
+    }
+    #[cfg(not(target_os = "macos"))]
+    show(hwnd, items, at);
+}
+
+fn show(hwnd: u64, items: &[Item], at: Option<crate::paint::Point>) {
     let menu = Menu::new();
     let children = build(items);
     let refs: Vec<&dyn IsMenuItem> = children.iter().map(|c| c.as_ref()).collect();
@@ -100,6 +114,38 @@ pub fn popup(hwnd: u64, items: &[Item], at: Option<crate::paint::Point>) {
         let picked = menu.show_context_menu_for_hwnd(hwnd as isize, position);
         tracing::debug!("popup menu closed, picked: {picked}");
     }
-    #[cfg(not(windows))]
+    #[cfg(target_os = "macos")]
+    // SAFETY: `hwnd` is the app's own live NSView, from GPUI.
+    unsafe {
+        let picked = menu.show_context_menu_for_nsview(hwnd as usize as *const std::ffi::c_void, position);
+        tracing::debug!("popup menu closed, picked: {picked}");
+    }
+    #[cfg(not(any(windows, target_os = "macos")))]
     let _ = (hwnd, position);
+}
+
+#[cfg(target_os = "macos")]
+mod mac {
+    use std::ffi::c_void;
+
+    type Job = Box<dyn FnOnce()>;
+
+    unsafe extern "C" {
+        static _dispatch_main_q: c_void;
+        fn dispatch_async_f(queue: *const c_void, context: *mut c_void, work: extern "C" fn(*mut c_void));
+    }
+
+    extern "C" fn run(context: *mut c_void) {
+        // SAFETY: `context` is the box `after_this_event` leaked, run once on the main queue.
+        let job = unsafe { Box::from_raw(context.cast::<Job>()) };
+        job();
+    }
+
+    /// Runs `job` on the main thread after the current event has been handled.
+    pub fn after_this_event(job: Job) {
+        let context = Box::into_raw(Box::new(job)).cast::<c_void>();
+        // SAFETY: `_dispatch_main_q` is the main queue (what `dispatch_get_main_queue()` returns);
+        // `run` takes back the box exactly once.
+        unsafe { dispatch_async_f(&raw const _dispatch_main_q, context, run) };
+    }
 }

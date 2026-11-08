@@ -10,7 +10,6 @@ use crate::asr::worker::AsrConfig;
 use crate::audio::clock::downmix;
 use crate::audio::level::{FLOOR_DBFS, to_dbfs};
 use crate::audio::resample::MonoResampler;
-use crate::audio::source::AudioSource;
 use crate::error::{AppError, AppResult, ErrorCode};
 use crate::events;
 use crate::session::model::SourceId;
@@ -24,17 +23,17 @@ pub struct MicTestResult {
     pub device: Option<String>,
 }
 
-#[cfg(windows)]
+#[cfg(any(windows, target_os = "macos"))]
 pub fn run(app: &AppHandle, st: &AppState, seconds: u64) -> AppResult<MicTestResult> {
-    use crate::audio::win::capture::{CaptureError, CaptureTarget, WasapiSource};
+    use crate::audio::source::{CaptureError, CaptureTarget};
     if !matches!(&*st.recorder.lock(), crate::recorder::Phase::Idle) {
         return Err(AppError::internal("not while recording"));
     }
     let settings = st.settings.read().clone();
-    let device = crate::audio::win::devices::mic_device_name(settings.source.mic_device_id.clone());
+    let device = crate::audio::mic_device_name(settings.source.mic_device_id.clone());
     let (status_tx, _status_rx) = crossbeam_channel::unbounded();
     let (tx, rx) = crossbeam_channel::bounded(400);
-    let mut source = WasapiSource::new(
+    let mut source = crate::audio::open_source(
         SourceId::Mic,
         CaptureTarget::Mic { device_id: settings.source.mic_device_id.clone() },
         status_tx,
@@ -121,7 +120,7 @@ pub fn speech_only(samples: &[f32]) -> Vec<f32> {
     out
 }
 
-#[cfg(windows)]
+#[cfg(any(windows, target_os = "macos"))]
 fn emit_level(app: &AppHandle, dbfs: f32) {
     events::emit(app, events::Event::Levels(vec![(SourceId::Mic, (dbfs * 10.0).round() / 10.0)]));
 }

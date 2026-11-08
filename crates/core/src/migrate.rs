@@ -2,9 +2,7 @@
 //! and the app's folders are named after its identifier, so without this an update would start
 //! with no settings, no models and no recordings in view.
 
-use std::path::{Path, PathBuf};
-
-use crate::host::IDENTIFIER;
+use std::path::Path;
 
 /// The app's identifier before the rename.
 pub const OLD_IDENTIFIER: &str = "dev.yusai.kikitori";
@@ -16,6 +14,8 @@ pub const OLD_OUTPUT_FOLDER: &str = "Kikitori";
 /// Runs before anything opens a file there. Returns what happened, to log once logging is up.
 #[cfg(windows)]
 pub fn app_folders() -> Vec<String> {
+    use crate::host::IDENTIFIER;
+    use std::path::PathBuf;
     let mut report = Vec::new();
     for var in ["APPDATA", "LOCALAPPDATA"] {
         if let Some(base) = std::env::var_os(var).map(PathBuf::from) {
@@ -25,6 +25,7 @@ pub fn app_folders() -> Vec<String> {
     report
 }
 
+/// Kikitori only ever shipped for Windows: nothing to move elsewhere.
 #[cfg(not(windows))]
 pub fn app_folders() -> Vec<String> {
     Vec::new()
@@ -34,6 +35,7 @@ pub fn app_folders() -> Vec<String> {
 /// `old` if it is empty. Entry by entry rather than one rename, so a file still locked by the old
 /// app's webview a moment after it quit costs only that file. Models are gigabytes, so this only
 /// ever renames on the same volume and never copies.
+#[cfg_attr(not(windows), allow(dead_code))]
 fn move_entries(old: &Path, new: &Path, report: &mut Vec<String>) {
     let Ok(entries) = std::fs::read_dir(old) else { return };
     if let Err(e) = std::fs::create_dir_all(new) {

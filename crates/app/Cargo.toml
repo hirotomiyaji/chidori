@@ -13,6 +13,8 @@ default = []
 gpu-vulkan = ["chidori-core/gpu-vulkan"]
 # Local NVIDIA builds only (needs the CUDA toolkit).
 gpu-cuda = ["chidori-core/gpu-cuda"]
+# The Mac build: Whisper on the Apple GPU.
+gpu-metal = ["chidori-core/gpu-metal"]
 
 [dependencies]
 chidori-core = { path = "../core" }
@@ -55,6 +57,20 @@ windows = { version = "0.62.2", features = [
   "Win32_UI_Controls",
   "Win32_System_Threading",
   "Win32_Security",
+] }
+
+# The window's own NSWindow calls (capture exclusion, hide to the menu bar, always on top);
+# the versions GPUI and muda already use.
+[target.'cfg(target_os = "macos")'.dependencies]
+objc2 = "0.6.4"
+objc2-app-kit = { version = "0.3.2", default-features = false, features = [
+  "std",
+  "NSApplication",
+  "NSGraphics",
+  "NSResponder",
+  "NSRunningApplication",
+  "NSView",
+  "NSWindow",
 ] }
 
 [build-dependencies]

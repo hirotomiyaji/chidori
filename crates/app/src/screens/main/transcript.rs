@@ -67,6 +67,8 @@ pub struct ListState {
     /// The keys of the rows the list holds, and how they looked, so it is told what changed.
     keys: RefCell<Vec<String>>,
     look: Cell<u64>,
+    /// The list's width as of the last layout, read before the rows are built (see `measure`).
+    width: Cell<f32>,
     cache: RefCell<Option<(u64, Rc<Rows>)>>,
     pub editing: Option<Edit>,
     /// A screenshot's caption being written: its ID and the draft.
@@ -96,6 +98,7 @@ impl ListState {
             caption_key: format!("{name}-caption").into(),
             keys: RefCell::new(Vec::new()),
             look: Cell::new(0),
+            width: Cell::new(0.0),
             cache: RefCell::new(None),
             editing: None,
             caption: None,
@@ -194,8 +197,15 @@ impl ListState {
         if was_shown && !self.shows(index) { self.scroll_to_row(index) } else { Task::none() }
     }
 
+    /// Notes the list's width for this frame. GPUI's list holds its state while it lays the rows
+    /// out, and a row asking it for its width then panics ("already mutably borrowed"), so the
+    /// width is read here, before the list is built, and rows read this copy.
+    fn measure(&self) {
+        self.width.set(f32::from(self.items.viewport_bounds().size.width));
+    }
+
     fn width(&self) -> f32 {
-        let w = f32::from(self.items.viewport_bounds().size.width);
+        let w = self.width.get();
         if w > 0.0 { w.min(MAX_W) } else { crate::app::EXPANDED.width }
     }
 }
@@ -486,6 +496,7 @@ pub fn view(app: &App, c: Ctx, ui: &mut Ui) -> El {
     }
     let mut keys: Vec<String> = rows.rows.iter().map(|r| r.key.clone()).collect();
     keys.push(footer_key(note));
+    list.measure();
     list.sync(keys, look_key(app, tr, list, c));
 
     let items = gpui_list(list.items.clone(), move |ix, _window, cx| {
@@ -898,4 +909,26 @@ fn tail_line(label: Option<El>, text: &str, color: Color, avail: f32) -> El {
         format!("…{}", chars[from..].iter().collect::<String>())
     };
     r.child(div().flex_1().min_w_0().overflow_hidden().child(line(shown, tokens::BODY, color))).into_any_element()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn width_before_any_layout_is_the_expanded_window() {
+        let list = ListState::new("t");
+        list.measure();
+        assert_eq!(list.width(), crate::app::EXPANDED.width);
+    }
+
+    /// Rows read the copy `measure` took, never GPUI's list, which is borrowed while it lays them out.
+    #[test]
+    fn width_comes_from_the_measured_copy() {
+        let list = ListState::new("t");
+        list.width.set(500.0);
+        assert_eq!(list.width(), 500.0);
+        list.width.set(2_000.0);
+        assert_eq!(list.width(), MAX_W);
+    }
 }

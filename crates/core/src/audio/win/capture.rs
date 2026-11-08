@@ -3,7 +3,6 @@
 //! One thread per source: COM MTA, MMCSS "Pro Audio", event-driven shared mode with 20 ms
 //! buffers, and every packet stamped with its QPC position.
 
-use std::path::PathBuf;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::thread::JoinHandle;
@@ -17,6 +16,7 @@ use wasapi::{
 
 use super::process;
 use crate::audio::source::{AudioSource, RawChunk, SourceStatus};
+pub use crate::audio::source::{CaptureError, CaptureTarget};
 use crate::platform;
 use crate::session::model::SourceId;
 
@@ -25,27 +25,6 @@ const E_ACCESSDENIED: i32 = 0x8007_0005_u32 as i32;
 const NO_PACKETS_RESTART: Duration = Duration::from_secs(5);
 const APP_SILENT_AFTER: Duration = Duration::from_secs(30);
 const DEFAULT_CHANGE_SETTLE: Duration = Duration::from_millis(1500);
-
-#[derive(Debug, Clone, PartialEq)]
-pub enum CaptureTarget {
-    /// `None` is the Windows default communications device.
-    Mic {
-        device_id: Option<String>,
-    },
-    System,
-    App {
-        root_pid: u32,
-        exe: PathBuf,
-    },
-}
-
-#[derive(Debug, thiserror::Error)]
-pub enum CaptureError {
-    #[error("microphone access is turned off in Windows privacy settings")]
-    MicDenied,
-    #[error("{0}")]
-    Other(String),
-}
 
 fn classify(err: &WasapiError) -> CaptureError {
     if let WasapiError::Windows(e) = err

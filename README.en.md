@@ -94,6 +94,14 @@ All Rust: the UI is [GPUI](https://www.gpui.rs) through `gpui-kit` (`crates/app`
 - For GPU builds: the Vulkan SDK (`winget install KhronosGroup.VulkanSDK --accept-package-agreements --accept-source-agreements`) and LLVM for bindgen (`winget install LLVM.LLVM`)
 - For the installer: `cargo install cargo-packager --locked`
 
+### Prerequisites (macOS, Apple Silicon, in progress)
+
+The Mac port ([issue 6](https://github.com/yusai-apps/chidori/issues/6)) records the mic and the whole system's sound (macOS 14.6+); one app's sound, packaging and updates are not done yet.
+
+- Xcode, Rust (the same toolchain version), and CMake (`brew install rustup cmake`, then `rustup toolchain install <version> --component rustfmt,clippy`)
+- Before any cargo command: `. scripts/macos-env.sh`. It gives whisper.cpp clang's flags in place of the MSVC ones in `.cargo/config.toml`, and puts Homebrew's rustup on `PATH`.
+- `cargo run -p chidori --features gpu-metal` is the Metal build. The first recording asks for the microphone, and システム全体 asks for system audio recording, both for the app that launched it (your terminal, for a dev build).
+
 ### Run and test
 
 ```sh

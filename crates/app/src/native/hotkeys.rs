@@ -15,9 +15,9 @@ use parking_lot::Mutex;
 type Action = fn(&AppHandle);
 
 fn toggle(app: &AppHandle) {
-    #[cfg(windows)]
+    #[cfg(any(windows, target_os = "macos"))]
     recorder::toggle(app, app.state());
-    #[cfg(not(windows))]
+    #[cfg(not(any(windows, target_os = "macos")))]
     let _ = app;
 }
 

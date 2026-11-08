@@ -102,12 +102,7 @@ pub fn list_audio_apps() -> AppResult<Vec<AudioApp>> {
 }
 
 pub fn list_mic_devices() -> AppResult<Vec<Device>> {
-    #[cfg(windows)]
-    {
-        crate::audio::win::devices::list_mic_devices().map_err(AppError::from)
-    }
-    #[cfg(not(windows))]
-    Ok(Vec::new())
+    crate::audio::list_mic_devices().map_err(AppError::from)
 }
 
 /// The apps whose loudness the source picker shows, by root PID; none stops reading their meters.
@@ -119,27 +114,27 @@ pub fn watch_app_levels(app: &AppHandle, root_pids: Vec<u32>) {
 }
 
 pub fn start_recording(app: &AppHandle, source: SourceConfig, title: Option<String>) -> AppResult<StartResponse> {
-    #[cfg(windows)]
+    #[cfg(any(windows, target_os = "macos"))]
     {
         recorder::start(app, app.state(), source, title)
     }
-    #[cfg(not(windows))]
+    #[cfg(not(any(windows, target_os = "macos")))]
     {
         let _ = (app, source, title);
-        Err(AppError::internal("recording needs Windows"))
+        Err(AppError::internal("recording needs Windows or macOS"))
     }
 }
 
 /// Records more onto a saved session (FR-08).
 pub fn continue_recording(app: &AppHandle, session_id: String, source: SourceConfig) -> AppResult<StartResponse> {
-    #[cfg(windows)]
+    #[cfg(any(windows, target_os = "macos"))]
     {
         recorder::continue_session(app, app.state(), source, session_id)
     }
-    #[cfg(not(windows))]
+    #[cfg(not(any(windows, target_os = "macos")))]
     {
         let _ = (app, session_id, source);
-        Err(AppError::internal("recording needs Windows"))
+        Err(AppError::internal("recording needs Windows or macOS"))
     }
 }
 
@@ -168,11 +163,11 @@ pub fn pause_recording(app: &AppHandle) -> AppResult<()> {
 }
 
 pub fn resume_recording(app: &AppHandle) -> AppResult<()> {
-    #[cfg(windows)]
+    #[cfg(any(windows, target_os = "macos"))]
     {
         recorder::resume(app, app.state())
     }
-    #[cfg(not(windows))]
+    #[cfg(not(any(windows, target_os = "macos")))]
     {
         let _ = app;
         Ok(())
@@ -180,11 +175,11 @@ pub fn resume_recording(app: &AppHandle) -> AppResult<()> {
 }
 
 pub fn switch_to_system(app: &AppHandle) -> AppResult<()> {
-    #[cfg(windows)]
+    #[cfg(any(windows, target_os = "macos"))]
     {
         recorder::switch_to_system(app, app.state())
     }
-    #[cfg(not(windows))]
+    #[cfg(not(any(windows, target_os = "macos")))]
     {
         let _ = app;
         Ok(())
@@ -193,11 +188,11 @@ pub fn switch_to_system(app: &AppHandle) -> AppResult<()> {
 
 /// Switches what is recorded without stopping (FR-17).
 pub fn switch_source(app: &AppHandle, source: SourceConfig) -> AppResult<()> {
-    #[cfg(windows)]
+    #[cfg(any(windows, target_os = "macos"))]
     {
         recorder::switch_source(app, app.state(), source)
     }
-    #[cfg(not(windows))]
+    #[cfg(not(any(windows, target_os = "macos")))]
     {
         let _ = (app, source);
         Ok(())
@@ -528,14 +523,14 @@ pub fn retry_gpu(app: &AppHandle) {
 }
 
 pub fn mic_test(app: &AppHandle, seconds: u64) -> AppResult<crate::mic_test::MicTestResult> {
-    #[cfg(windows)]
+    #[cfg(any(windows, target_os = "macos"))]
     {
         crate::mic_test::run(app, app.state(), seconds.clamp(3, 20))
     }
-    #[cfg(not(windows))]
+    #[cfg(not(any(windows, target_os = "macos")))]
     {
         let _ = (app, seconds);
-        Err(AppError::internal("recording needs Windows"))
+        Err(AppError::internal("recording needs Windows or macOS"))
     }
 }
 
