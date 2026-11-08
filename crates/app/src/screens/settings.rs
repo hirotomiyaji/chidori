@@ -410,7 +410,7 @@ pub fn summary(app: &App, tab: SettingsTab) -> String {
                 .mic_device_id
                 .as_ref()
                 .and_then(|id| app.source.devices.iter().find(|d| &d.id == id))
-                .map_or_else(|| t("defaultDevice"), |d| d.name.clone());
+                .map_or_else(crate::i18n::default_device, |d| d.name.clone());
             let mut parts = vec![mic];
             if s.echo_guard {
                 parts.push(t("echoGuard"));
@@ -527,7 +527,7 @@ fn slider_row(label: String, range: std::ops::RangeInclusive<f32>, step: f32, va
 fn audio(app: &App) -> Vec<El> {
     let s = &app.settings;
     let ui = &app.settings_ui;
-    let mut mics = vec![opt(None, t("defaultDevice"))];
+    let mut mics = vec![opt(None, crate::i18n::default_device())];
     mics.extend(app.source.devices.iter().map(|d| opt(Some(d.id.clone()), d.name.clone())));
     let threshold = ui.threshold.unwrap_or(s.vad.start_threshold);
     let hangover = ui.hangover.unwrap_or(s.vad.hangover_ms as f32);

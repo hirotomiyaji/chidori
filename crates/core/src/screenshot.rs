@@ -56,10 +56,10 @@ pub trait ScreenCapturer: Send + Sync {
     fn windows(&self) -> anyhow::Result<Vec<WindowInfo>>;
 }
 
-#[cfg(windows)]
+#[cfg(any(windows, target_os = "macos"))]
 pub struct XcapCapturer;
 
-#[cfg(windows)]
+#[cfg(any(windows, target_os = "macos"))]
 impl XcapCapturer {
     fn cursor_monitor() -> anyhow::Result<Captured> {
         let (x, y) = crate::platform::cursor_pos().unwrap_or((0, 0));
@@ -77,7 +77,7 @@ impl XcapCapturer {
     }
 }
 
-#[cfg(windows)]
+#[cfg(any(windows, target_os = "macos"))]
 impl ScreenCapturer for XcapCapturer {
     fn capture(&self, target: CaptureTarget) -> anyhow::Result<CaptureResult> {
         match target {
@@ -92,9 +92,7 @@ impl ScreenCapturer for XcapCapturer {
                 Ok(CaptureResult { images, fell_back: false })
             }
             CaptureTarget::AppWindow { root_pid } => {
-                let procs = crate::audio::win::process::snapshot();
-                let tree: std::collections::HashSet<u32> =
-                    crate::audio::win::process::tree_of(&procs, root_pid).into_iter().collect();
+                let tree: std::collections::HashSet<u32> = crate::audio::process_tree(root_pid).into_iter().collect();
                 let best = xcap::Window::all()?
                     .into_iter()
                     .filter(|w| w.pid().is_ok_and(|p| tree.contains(&p)))
@@ -283,7 +281,7 @@ mod tests {
         assert_eq!(image::load_from_memory(&print).unwrap().width(), 640);
     }
 
-    #[cfg(windows)]
+    #[cfg(any(windows, target_os = "macos"))]
     #[test]
     #[ignore = "lists the real desktop's windows"]
     fn lists_open_windows_quickly() {
@@ -296,7 +294,7 @@ mod tests {
         assert!(windows.len() <= MAX_WINDOWS);
     }
 
-    #[cfg(windows)]
+    #[cfg(any(windows, target_os = "macos"))]
     #[test]
     #[ignore = "captures the real screen"]
     fn captures_cursor_monitor_quickly() {

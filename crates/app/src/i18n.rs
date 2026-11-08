@@ -59,6 +59,16 @@ pub fn t_json(key: &str, params: &serde_json::Map<String, serde_json::Value>) ->
     s
 }
 
+/// Why one app's sound can't be chosen on this OS.
+pub fn app_capture_unavailable() -> String {
+    t(if cfg!(target_os = "macos") { "appCaptureMacLater" } else { "win11Required" })
+}
+
+/// The mic list's entry for the system's default device.
+pub fn default_device() -> String {
+    t(if cfg!(target_os = "macos") { "defaultDeviceMac" } else { "defaultDevice" })
+}
+
 #[cfg(test)]
 mod tests {
     #[test]

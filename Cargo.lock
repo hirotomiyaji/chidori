@@ -1057,7 +1057,7 @@ dependencies = [
 
 [[package]]
 name = "chidori"
-version = "0.7.0"
+version = "0.8.0"
 dependencies = [
  "anyhow",
  "arboard",
@@ -1070,6 +1070,8 @@ dependencies = [
  "gpui-kit",
  "image",
  "lyon_tessellation",
+ "objc2 0.6.4",
+ "objc2-app-kit 0.3.2",
  "open",
  "parking_lot",
  "raw-window-handle",
@@ -1090,12 +1092,13 @@ dependencies = [
 
 [[package]]
 name = "chidori-core"
-version = "0.7.0"
+version = "0.8.0"
 dependencies = [
  "anyhow",
  "audioadapter-buffers",
  "base64 0.23.1",
  "chrono",
+ "cpal",
  "crossbeam-channel",
  "dirs 6.0.0",
  "earshot",

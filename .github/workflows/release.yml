@@ -8,7 +8,7 @@ permissions:
   contents: write
 
 jobs:
-  release:
+  windows:
     runs-on: windows-latest
     env:
       # Portable CPU code (AVX2), never the runner's own instruction set.
@@ -40,19 +40,63 @@ jobs:
       # The GPU build with the Khronos Vulkan loader beside the exe, the licence list, the NSIS
       # installer, its signature and latest.json for the updater.
       - run: cargo xtask dist
+      - uses: actions/upload-artifact@v7
+        with:
+          name: windows
+          path: |
+            ${{ env.CARGO_TARGET_DIR }}/dist/*-setup.exe
+            ${{ env.CARGO_TARGET_DIR }}/dist/*-setup.exe.sig
+            ${{ env.CARGO_TARGET_DIR }}/dist/latest.json
+          if-no-files-found: error
+          retention-days: 1
+
+  macos:
+    # Apple Silicon; the .dmg is for M1 and later.
+    runs-on: macos-latest
+    env:
+      GGML_NATIVE: "OFF"
+    steps:
+      - uses: actions/checkout@v7.0.1
+      - uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: 1.98.1
+      - uses: Swatinem/rust-cache@v2.9.2
+      - run: cargo install cargo-packager --locked --version 0.11.8
+      # The Metal build as Chidori.app, signed ad hoc, in a .dmg (section 17).
+      - run: cargo xtask dist
+      - uses: actions/upload-artifact@v7
+        with:
+          name: macos
+          path: target/dist/*.dmg
+          if-no-files-found: error
+          retention-days: 1
+
+  release:
+    needs: [windows, macos]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v8
+        with:
+          path: dist
+          merge-multiple: true
       - name: Draft the release
-        shell: bash
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           NOTES: |
-            Windows 10/11（64ビット）用です。下の `Chidori_…_x64-setup.exe` をダウンロードして開いてください。
+            **Windows 10/11（64ビット）**: 下の `Chidori_…_x64-setup.exe` をダウンロードして開いてください。
             「Windows によって PC が保護されました」と表示されたら、**詳細情報** → **実行** を押します（インストーラーはまだコード署名されていません）。
+
+            **Mac（Apple シリコン、macOS 14.6 以降、試験中）**: `Chidori_…_aarch64.dmg` を開いて Chidori をアプリケーションにドラッグします。初回は **システム設定 → プライバシーとセキュリティ → このまま開く** で開いてください（まだ公証を受けていません）。アプリ単位の録音はまだできません。
+
             使い方は [README](https://github.com/${{ github.repository }}#readme) をご覧ください。
 
-            For Windows 10/11 (64-bit). Download `Chidori_…_x64-setup.exe` below and open it.
+            **Windows 10/11 (64-bit)**: download `Chidori_…_x64-setup.exe` below and open it.
             If Windows says "Windows protected your PC", click **More info**, then **Run anyway** (the installer isn't code-signed yet).
+
+            **Mac (Apple Silicon, macOS 14.6+, early testing)**: open `Chidori_…_aarch64.dmg` and drag Chidori onto Applications. The first time, open it through **System Settings → Privacy & Security → Open Anyway** (it isn't notarized yet). Recording a single app isn't available on Mac yet.
+
             See the [English README](https://github.com/${{ github.repository }}/blob/main/README.en.md) for the full guide.
         run: |
-          dist="$CARGO_TARGET_DIR/dist"
-          gh release create "$GITHUB_REF_NAME" --draft --title "Chidori $GITHUB_REF_NAME" --notes "$NOTES" \
-            "$dist"/*-setup.exe "$dist"/*-setup.exe.sig "$dist"/latest.json
+          ls -l dist
+          gh release create "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" --draft --title "Chidori $GITHUB_REF_NAME" \
+            --notes "$NOTES" dist/*-setup.exe dist/*-setup.exe.sig dist/latest.json dist/*.dmg

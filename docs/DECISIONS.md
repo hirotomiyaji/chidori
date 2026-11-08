@@ -584,6 +584,45 @@ found a reason to deviate.
   folder (`ops::allowed_path`).
 - **TLS** uses rustls with the ring provider (installed at startup).
 
+## macOS (issue 6, step 1 and part of step 2)
+
+- **Builds.** `gpu-metal` (`whisper-rs/metal`) is the Mac GPU build. Cargo's `[env]` in
+  `.cargo/config.toml` cannot be limited to one target and carries MSVC flags for whisper.cpp,
+  so Mac builds source `scripts/macos-env.sh`, whose clang flags win over `[env]`.
+- **Capture through `cpal`'s Core Audio host** (`audio/mac/`), not ScreenCaptureKit: the mic is
+  an input stream, and システム全体 is `cpal`'s loopback stream on the default output, a Core
+  Audio process tap (macOS 14.6+). It needs no screen-recording permission, only the audio one,
+  and it adds no crate. Buffers carry Core Audio's host time, which is `mach_absolute_time`, and
+  `platform::qpc_now_100ns` reads the same clock on macOS, so section 7's placing by timestamp
+  holds. The callback never blocks Core Audio's real-time thread: a full queue drops the buffer
+  and logs it.
+- **Default devices (FR-15)** are polled once a second, as on Windows, with the same 1.5 s
+  settle; `cpal` only follows the default for output streams.
+- **One app's sound is not done yet.** `app_loopback_supported()` stays false on macOS, so the
+  picker disables apps the way Windows 10 does, and the app list is empty. A process tap per
+  app (with its helper processes) is the next step.
+- **The window** is hidden from captures with `NSWindow.sharingType = .none`, hidden to the
+  menu bar with `orderOut`, and kept on top with the floating level. Notifications go through
+  `osascript` (no bundle or permission needed). A second launch hands over to the running copy
+  through a Unix socket in the user's temp folder, as a named mutex and event do on Windows; Launch
+  Services already keeps a `.app` to one copy, but a binary started from a terminal is not.
+- **Display language** is the first of `defaults read -g AppleLanguages`.
+- **Kikitori migration** is Windows-only: Kikitori never shipped for macOS.
+- **Packaging (step 4).** `cargo xtask dist` on a Mac builds the Metal app, has cargo-packager
+  make `Chidori.app` (Info.plist keys from `crates/app/macos/Info.plist`), signs it ad hoc and
+  packs `Chidori_<version>_aarch64.dmg` with `hdiutil`. Apple Silicon only, macOS 14.6+. Ad hoc
+  because a Developer ID costs $99 a year: a downloaded copy opens through System Settings →
+  Privacy & Security → Open Anyway, and macOS may ask for the mic and system audio again after
+  an update (the signature changes with every build). A Developer ID and notarization fix both.
+  No hardened runtime, which would need entitlements for the mic. Bundled files live in
+  `Contents/Resources`, which `host::Paths` reads on macOS.
+- **Updates on macOS** use the same daily `latest.json` check, but the banner's button opens the
+  release page to download the `.dmg`: there is no installer the app could run, and replacing a
+  running bundle by hand is more than the app needs. `latest.json` stays Windows-only.
+- **CI and releases.** `ci.yml` adds a `macos-latest` job (clippy with `gpu-metal`, tests); the
+  repo is public, so its minutes are free. `release.yml` builds the Windows installer and the
+  `.dmg` on their own runners and drafts one release with both.
+
 ## Test assets
 
 - **Benchmark clip** `crates/app/resources/bench_ja.wav`: 10 s (4.0–14.0 s) of chapter 4 of the

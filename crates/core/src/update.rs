@@ -11,6 +11,10 @@ use crate::error::{AppError, AppResult, ErrorCode};
 
 pub const ENDPOINT: &str = "https://github.com/yusai-apps/chidori/releases/latest/download/latest.json";
 
+/// Where a Mac update is downloaded by hand: the Mac app isn't installed by an installer the app
+/// can run, so its update banner opens this page instead.
+pub const RELEASES_PAGE: &str = "https://github.com/yusai-apps/chidori/releases/latest";
+
 /// The release key's public half, as `tauri signer generate` wrote it (base64 of the key file).
 /// `cargo xtask dist` checks each new installer's signature against the same file.
 const PUBKEY: &str = include_str!("update.pub");
@@ -85,6 +89,9 @@ pub async fn check(current: &str) -> AppResult<Option<Release>> {
         .map_err(network)?;
     if !is_newer(&manifest.version, current) {
         return Ok(None);
+    }
+    if cfg!(target_os = "macos") {
+        return Ok(Some(Release { version: manifest.version, url: RELEASES_PAGE.into(), signature: String::new() }));
     }
     let Some(platform) = manifest.platforms.get(platform_key()) else { return Ok(None) };
     Ok(Some(Release { version: manifest.version, url: platform.url.clone(), signature: platform.signature.clone() }))

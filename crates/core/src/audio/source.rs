@@ -1,5 +1,7 @@
 //! OS-neutral audio source interface (section 6). Windows code lives in `audio::win`.
 
+use std::path::PathBuf;
+
 use crossbeam_channel::Sender;
 use serde::Serialize;
 
@@ -52,6 +54,29 @@ pub enum SourceStatus {
         source: SourceId,
         message: String,
     },
+}
+
+/// What a capture stream records. The OS backends (`audio::win`, `audio::mac`) open it.
+#[derive(Debug, Clone, PartialEq)]
+pub enum CaptureTarget {
+    /// `None` is the system's default (on Windows, its default communications device).
+    Mic {
+        device_id: Option<String>,
+    },
+    System,
+    App {
+        root_pid: u32,
+        exe: PathBuf,
+    },
+}
+
+#[derive(Debug, thiserror::Error)]
+pub enum CaptureError {
+    #[cfg_attr(windows, error("microphone access is turned off in Windows privacy settings"))]
+    #[cfg_attr(not(windows), error("microphone access is turned off in the system's privacy settings"))]
+    MicDenied,
+    #[error("{0}")]
+    Other(String),
 }
 
 pub trait AudioSource: Send {

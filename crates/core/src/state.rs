@@ -31,7 +31,7 @@ pub struct AppState {
     pub downloads: Mutex<HashMap<String, watch::Sender<bool>>>,
     pub last_shot: Mutex<Option<Instant>>,
     pub quit_after_finish: AtomicBool,
-    #[cfg(windows)]
+    #[cfg(any(windows, target_os = "macos"))]
     pub capturer: crate::screenshot::XcapCapturer,
     /// How loud each app in the source picker is.
     #[cfg(windows)]
@@ -67,7 +67,7 @@ impl AppState {
             downloads: Mutex::new(HashMap::new()),
             last_shot: Mutex::new(None),
             quit_after_finish: AtomicBool::new(false),
-            #[cfg(windows)]
+            #[cfg(any(windows, target_os = "macos"))]
             capturer: crate::screenshot::XcapCapturer,
             #[cfg(windows)]
             meters: Default::default(),

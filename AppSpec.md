@@ -583,10 +583,15 @@ update check of its own.
   relaunches the app.
 - **Versioning.** SemVer; the workspace `Cargo.toml` is the source, `CHANGELOG.md` alongside.
 
+- **macOS.** `cargo xtask dist` on a Mac makes `Chidori_<version>_aarch64.dmg`: the Metal build
+  as `Chidori.app` (Apple Silicon, macOS 14.6+), signed ad hoc, not notarized. Its update banner
+  opens the release page instead of installing (see DECISIONS → macOS).
+
 **CI** (`.github/workflows/`): `ci.yml` runs rustfmt, the Vulkan clippy build and the tests on
-every push and pull request that changes more than docs; `release.yml` builds and signs a draft
-release from a `v*` tag, after checking the signature against the app's key; `nightly.yml` runs
-the ignored integration tests on CPU with `base-q5`.
+every push and pull request that changes more than docs, and the Metal clippy build and the
+tests on macOS; `release.yml` builds the Windows installer (signed, after checking the signature
+against the app's key) and the Mac `.dmg`, and drafts one release with both from a `v*` tag;
+`nightly.yml` runs the ignored integration tests on CPU with `base-q5`.
 
 ## 18. Testing and acceptance
 
@@ -617,7 +622,11 @@ one pass with the same model, and latency within section 16 on the reference GPU
 
 ## 19. Future work
 
-**macOS (phase 2).** The section 6 traits exist so the port only adds files.
+**macOS (phase 2, in progress).** The section 6 traits exist so the port only adds files. Done:
+the mic and the whole system's sound through `cpal`'s Core Audio host (a process tap, 14.6+),
+Metal, screenshots through `xcap`, the window, tray and hotkeys, and the `.dmg`
+(DECISIONS → macOS). Left: one app's sound, transcribing files other than WAV and Ogg Opus (the other formats go
+through Media Foundation), signing and notarization.
 
 | Piece | Approach | To verify |
 | --- | --- | --- |

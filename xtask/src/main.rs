@@ -1,12 +1,17 @@
 //! Builds the installer (section 17).
 //!
-//!   cargo xtask dist        the release installer, as CI builds it (Windows: GPU build, NSIS)
+//!   cargo xtask dist        the release installer, as CI builds it (Windows: Vulkan build, NSIS;
+//!                           macOS: Metal build, Chidori.app in a .dmg)
 //!   cargo xtask notices     only writes the third-party licence list
 //!
-//! `dist` builds the app with the Vulkan backend, bundles Khronos' Vulkan loader next to the exe
-//! (so the app starts on PCs without a GPU driver and falls back to the CPU), writes the licence
-//! list the installer ships, and runs cargo-packager. Set `CARGO_PACKAGER_SIGN_PRIVATE_KEY` (and
-//! `..._PASSWORD`) to sign the installer for the updater.
+//! On Windows `dist` builds the app with the Vulkan backend, bundles Khronos' Vulkan loader next to
+//! the exe (so the app starts on PCs without a GPU driver and falls back to the CPU), writes the
+//! licence list the installer ships, and runs cargo-packager. Set `CARGO_PACKAGER_SIGN_PRIVATE_KEY`
+//! (and `..._PASSWORD`) to sign the installer for the updater.
+//!
+//! On macOS it builds the Metal app, has cargo-packager make the `.app`, signs it ad hoc and packs
+//! it into a `.dmg` with `hdiutil`. The Mac updater only points at the release page, so nothing
+//! there is signed with the update key.
 
 mod notices;
 
@@ -156,9 +161,16 @@ fn packager_config(version: &str, release_dir: &Path, out_dir: &Path) -> serde_j
 }
 
 fn dist() -> Result<()> {
-    if !cfg!(windows) {
-        return Err("the installer is built on Windows".into());
+    if cfg!(target_os = "macos") {
+        dist_mac()
+    } else if cfg!(windows) {
+        dist_windows()
+    } else {
+        Err("the installer is built on Windows or macOS".into())
     }
+}
+
+fn dist_windows() -> Result<()> {
     let version = app_version()?;
     let target = target_dir();
     ensure_vulkan_runtime()?;
@@ -203,6 +215,90 @@ fn dist() -> Result<()> {
     } else {
         println!("Not signed: set CARGO_PACKAGER_SIGN_PRIVATE_KEY for an installer the updater accepts");
     }
+    Ok(())
+}
+
+/// The app's Info.plist keys beyond what cargo-packager writes: why it asks for the mic and the
+/// system's sound (macOS refuses both without them).
+const MAC_INFO_PLIST: &str = "macos/Info.plist";
+
+/// Builds `Chidori_<version>_aarch64.dmg` in `<target>/dist`.
+fn dist_mac() -> Result<()> {
+    let version = app_version()?;
+    let target = target_dir();
+    println!("Wrote {}", notices::write(&root())?.display());
+    let mut build = Command::new(env!("CARGO"));
+    build.args(["build", "--release", "-p", "chidori", "--features", "gpu-metal", "--locked"]).current_dir(root());
+    // `.cargo/config.toml`'s [env] carries MSVC flags for whisper.cpp; variables already set win
+    // over it, so give clang the same optimization (scripts/macos-env.sh does this for cargo run).
+    for (var, flags) in [
+        ("CMAKE_C_FLAGS_RELEASE", "-O3 -DNDEBUG"),
+        ("CMAKE_CXX_FLAGS_RELEASE", "-O3 -DNDEBUG"),
+        ("CMAKE_C_FLAGS_RELWITHDEBINFO", "-O2 -g -DNDEBUG"),
+        ("CMAKE_CXX_FLAGS_RELWITHDEBINFO", "-O2 -g -DNDEBUG"),
+    ] {
+        if std::env::var_os(var).is_none() {
+            build.env(var, flags);
+        }
+    }
+    run(&mut build)?;
+
+    let release_dir = target.join("release");
+    let out_dir = target.join("dist");
+    let _ = std::fs::remove_dir_all(&out_dir);
+    let app = app_dir();
+    let p = |rel: &str| app.join(rel).to_string_lossy().into_owned();
+    let config = serde_json::json!({
+        "name": "chidori",
+        "productName": "Chidori",
+        "version": version,
+        "identifier": "dev.yusai.chidori",
+        "publisher": "yusai",
+        "description": "Live transcription with local Whisper",
+        "outDir": out_dir,
+        "binariesDir": release_dir,
+        "binaries": [{ "path": "chidori", "main": true }],
+        "icons": [p("icons/icon.icns")],
+        "formats": ["app"],
+        // host::Paths reads these from Contents/Resources.
+        "resources": [
+            { "src": p("resources/bench_ja.wav"), "target": "resources/bench_ja.wav" },
+            { "src": p("resources/licenses/typst-LICENSE.txt"), "target": "licenses/typst-LICENSE.txt" },
+            { "src": p("resources/licenses/typst-NOTICE.txt"), "target": "licenses/typst-NOTICE.txt" },
+            { "src": p("resources/licenses/THIRD-PARTY-NOTICES.txt"), "target": "licenses/THIRD-PARTY-NOTICES.txt" }
+        ],
+        "macos": {
+            "minimumSystemVersion": "14.6",
+            "infoPlistPath": p(MAC_INFO_PLIST)
+        }
+    });
+    let config_path = target.join("packager-macos.json");
+    std::fs::write(&config_path, config.to_string()).map_err(|e| e.to_string())?;
+    run(Command::new("cargo-packager").args(["--release", "--config"]).arg(&config_path).current_dir(root()))?;
+
+    let bundle = out_dir.join("Chidori.app");
+    if !bundle.is_dir() {
+        return Err(format!("cargo-packager made no {}", bundle.display()));
+    }
+    // Ad hoc, without the hardened runtime (which would need entitlements for the mic). Unsigned
+    // bundles are reported as "damaged" once downloaded; ad hoc ones get "Open Anyway".
+    run(Command::new("codesign").args(["--force", "--deep", "--sign", "-"]).arg(&bundle))?;
+    run(Command::new("codesign").args(["--verify", "--deep", "--strict"]).arg(&bundle))?;
+
+    // The window the .dmg opens: the app beside a link to /Applications to drag it onto.
+    let stage = target.join("dmg-stage");
+    let _ = std::fs::remove_dir_all(&stage);
+    std::fs::create_dir_all(&stage).map_err(|e| e.to_string())?;
+    run(Command::new("ditto").arg(&bundle).arg(stage.join("Chidori.app")))?;
+    #[cfg(unix)]
+    std::os::unix::fs::symlink("/Applications", stage.join("Applications")).map_err(|e| e.to_string())?;
+    let dmg = out_dir.join(format!("Chidori_{version}_aarch64.dmg"));
+    run(Command::new("hdiutil")
+        .args(["create", "-volname", "Chidori", "-fs", "HFS+", "-format", "UDZO", "-ov", "-srcfolder"])
+        .arg(&stage)
+        .arg(&dmg))?;
+    let _ = std::fs::remove_dir_all(&stage);
+    println!("Disk image: {}", dmg.display());
     Ok(())
 }
 
