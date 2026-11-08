@@ -231,15 +231,15 @@ fn dist_mac() -> Result<()> {
     build.args(["build", "--release", "-p", "chidori", "--features", "gpu-metal", "--locked"]).current_dir(root());
     // `.cargo/config.toml`'s [env] carries MSVC flags for whisper.cpp; variables already set win
     // over it, so give clang the same optimization (scripts/macos-env.sh does this for cargo run).
+    // Set them unconditionally: `cargo xtask` is `cargo run`, which hands this process those MSVC
+    // flags already, so "only if unset" would pass `-nologo` on to clang.
     for (var, flags) in [
         ("CMAKE_C_FLAGS_RELEASE", "-O3 -DNDEBUG"),
         ("CMAKE_CXX_FLAGS_RELEASE", "-O3 -DNDEBUG"),
         ("CMAKE_C_FLAGS_RELWITHDEBINFO", "-O2 -g -DNDEBUG"),
         ("CMAKE_CXX_FLAGS_RELWITHDEBINFO", "-O2 -g -DNDEBUG"),
     ] {
-        if std::env::var_os(var).is_none() {
-            build.env(var, flags);
-        }
+        build.env(var, flags);
     }
     run(&mut build)?;
 
