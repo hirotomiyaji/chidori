@@ -9,7 +9,9 @@ mod app;
 mod bridge;
 mod i18n;
 mod icons;
+mod jello;
 mod model;
+mod motion;
 mod native;
 mod paint;
 #[cfg(test)]

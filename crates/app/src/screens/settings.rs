@@ -1,13 +1,14 @@
-//! 設定 (section 15): a list of its sections, each showing what it is set to now; a section opens
-//! with a back arrow in the title bar (DECISIONS → UI, "Settings is a list"). A change saves at
-//! once, except the word list and the title format, which save when you leave them, and the
-//! sliders, which save when let go. Also the shortcut recorder the wizard uses too.
+//! 設定 (section 15): its sections as chips at the top, the chosen one's white pill sliding between
+//! them, each chip saying what its section is set to when pointed at; under them the section's
+//! groups as white panels of rows (DECISIONS → UI, "Settings are chips"). The model list opens from
+//! 文字起こし. A change saves at once, except the word list and the title format, which save when
+//! you leave them. Also the shortcut recorder the wizard uses too.
 
 use chidori_core::export::LabelMode;
 use chidori_core::ops;
 use chidori_core::session::model::SourceId;
 use chidori_core::settings::{Hotkeys, Language, Layout, Locale, ScreenshotTarget, Settings};
-use gpui_kit::{InteractiveElement, IntoElement, ParentElement, Styled, div, px};
+use gpui_kit::{InteractiveElement, IntoElement, ParentElement, StatefulInteractiveElement, Styled, div, px};
 use serde_json::{Value, json};
 
 use super::form::{self, Opt, choose, opt};
@@ -16,28 +17,26 @@ use crate::app::{App, Message, SettingsTab, call};
 use crate::i18n::{t, tf};
 use crate::icons::{Icon, icon};
 use crate::task::Task;
-use crate::theme::{self, Ink, line, p, tokens};
+use crate::theme::{self, Ink, g, line, p, tokens};
 pub use crate::ui::KeyPress;
 use crate::ui::{self, El, Field, Ui, clickable};
-use crate::widgets::{Size, Variant, btn, col, field, fill, hairline, row, section, toggle_row};
+use crate::widgets::{
+    Size, Variant, btn, chip, chips, col, field, fill, icon_button, panel, row, section, setting_row, toggle_row,
+    with_tip,
+};
 
 const VOCAB: &str = "settings-vocab";
 const TEMPLATE: &str = "settings-template";
 
-/// The sections in the order the list shows them.
-pub const TABS: [(SettingsTab, &str); 7] = [
+/// The sections in the order the chips show them. The model list sits under 文字起こし.
+pub const TABS: [(SettingsTab, &str); 6] = [
     (SettingsTab::General, "tabGeneral"),
     (SettingsTab::Audio, "tabAudio"),
     (SettingsTab::Transcription, "tabTranscription"),
-    (SettingsTab::Models, "tabModels"),
     (SettingsTab::Screenshots, "tabScreenshots"),
     (SettingsTab::Hotkeys, "tabHotkeys"),
     (SettingsTab::Output, "tabOutput"),
 ];
-
-fn tab_key(tab: SettingsTab) -> &'static str {
-    TABS.iter().find(|(t, _)| *t == tab).map_or("settingsTitle", |(_, k)| k)
-}
 
 /// The global shortcuts (FR-01, FR-06, FR-07, FR-30).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -300,45 +299,77 @@ fn leaving(app: &App) -> bool {
 
 pub fn view(app: &App, ui: &mut Ui) -> El {
     let tab = app.settings_tab;
-    let page = if tab == SettingsTab::Index {
-        index(app)
-    } else {
-        let body: El = match tab {
-            SettingsTab::Models => super::models::list(app),
-            _ => {
-                let groups = match tab {
-                    SettingsTab::General => general(app),
-                    SettingsTab::Audio => audio(app),
-                    SettingsTab::Transcription => transcription(app, ui),
-                    SettingsTab::Screenshots => screenshots(app),
-                    SettingsTab::Hotkeys => hotkeys(app),
-                    _ => output(app, ui),
-                };
-                let mut c = col()
-                    .w_full()
-                    .gap(px(tokens::SPACE_3))
-                    .px(px(14.0))
-                    .pt(px(tokens::SPACE_3))
-                    .pb(px(tokens::SPACE_4));
-                for g in groups {
-                    c = c.child(g);
-                }
-                c.into_any_element()
-            }
-        };
-        col()
-            .size_full()
-            .child(form::head(t(tab_key(tab)), Some(t("settingsTitle"))))
-            .child(hairline())
-            .child(form::scroll(body))
-            .into_any_element()
+    let body: El = match tab {
+        SettingsTab::Models => {
+            let back = row()
+                .w_full()
+                .gap(g(1.0))
+                .child(icon_button(
+                    Icon::ArrowLeft,
+                    t("back"),
+                    Size::Md,
+                    Some(msg(Msg::Open(SettingsTab::Transcription))),
+                ))
+                .child(line(t("tabModels"), tokens::HEADING, p().ink));
+            col()
+                .w_full()
+                .gap(g(1.0))
+                .px(g(2.0))
+                .pb(g(2.0))
+                .child(back)
+                .child(super::models::list(app))
+                .into_any_element()
+        }
+        _ => {
+            let groups = match tab {
+                SettingsTab::General => general(app),
+                SettingsTab::Audio => audio(app),
+                SettingsTab::Transcription => transcription(app, ui),
+                SettingsTab::Screenshots => screenshots(app),
+                SettingsTab::Hotkeys => hotkeys(app),
+                _ => output(app, ui),
+            };
+            col().w_full().gap(g(2.0)).px(g(2.0)).pt(g(1.0)).pb(g(2.0)).children(groups).into_any_element()
+        }
     };
+    let page = col().size_full().child(section_chips(app)).child(form::scroll(body));
     let mut root = div().id("settings").size_full().flex().flex_col().child(page);
     if leaving(app) {
         // Comes before the release that presses a button, so recording another shortcut still works.
         root = root.on_any_mouse_down(|_, _, cx| ui::send(msg(Msg::Leave), cx));
     }
     root.into_any_element()
+}
+
+/// The sections as chips in a row that scrolls sideways, each saying what it is set to when
+/// pointed at; 文字起こし stays chosen while its model list is open.
+fn section_chips(app: &App) -> El {
+    let current = if app.settings_tab == SettingsTab::Models { SettingsTab::Transcription } else { app.settings_tab };
+    let mut chosen = None;
+    let items = TABS
+        .iter()
+        .enumerate()
+        .map(|(i, (tab, key))| {
+            let here = *tab == current;
+            if here {
+                chosen = Some(i);
+            }
+            let attention = *tab == SettingsTab::Hotkeys && hotkeys_taken(app);
+            let label = if attention { format!("{} !", t(key)) } else { t(key) };
+            with_tip(div().child(chip(label, None, here, Some(msg(Msg::Open(*tab))))), summary(app, *tab))
+                .into_any_element()
+        })
+        .collect();
+    div()
+        .id("settings-chips")
+        .flex_none()
+        .w_full()
+        .px(g(2.0))
+        .pt(g(1.0))
+        .pb(g(1.0))
+        .overflow_x_scroll()
+        .child(chips("settings", items, chosen))
+        .into_any_element()
 }
 
 fn language_key(l: Language) -> &'static str {
@@ -402,44 +433,7 @@ pub fn summary(app: &App, tab: SettingsTab) -> String {
             if set.is_empty() { t("hotkeyOff") } else { set.join(" · ") }
         }
         SettingsTab::Output => short_path(&s.output.root),
-        SettingsTab::Index => String::new(),
     }
-}
-
-/// The list: each section, what it is set to, and a chevron; the version and the logs below.
-fn index(app: &App) -> El {
-    let mut rows = col().w_full().child(hairline());
-    for (tab, key) in TABS {
-        let attention = tab == SettingsTab::Hotkeys && hotkeys_taken(app);
-        let value =
-            line(summary(app, tab), tokens::CAPTION, if attention { p().ink } else { p().ink_muted }).max_w(px(210.0));
-        let value = if attention { value.medium() } else { value };
-        let sunk = p().surface_sunken;
-        let r = clickable(Some(msg(Msg::Open(tab))), ("settings-tab", key))
-            .flex()
-            .items_center()
-            .w_full()
-            .gap(px(10.0))
-            .py(px(tokens::SPACE_3))
-            .px(px(6.0))
-            .hover(move |s| s.bg(sunk))
-            .child(line(t(key), tokens::LABEL, p().ink).flex_1().min_w_0())
-            .child(value)
-            .child(icon(Icon::ChevronRight, 14.0, p().ink_muted));
-        rows = rows.child(r).child(hairline());
-    }
-    let foot = row()
-        .w_full()
-        .px(px(6.0))
-        .pt(px(tokens::SPACE_3))
-        .child(line(tf("version", &[("v", &app.info.version)]), tokens::CAPTION, p().ink_muted))
-        .child(fill())
-        .child(form::link(theme::plain(t("openLogs"), tokens::CAPTION).medium(), msg(Msg::OpenLogs)));
-    col()
-        .size_full()
-        .child(form::head(t("settingsTitle"), None))
-        .child(form::scroll(col().w_full().px(px(14.0)).pb(px(tokens::SPACE_4)).child(rows).child(foot)))
-        .into_any_element()
 }
 
 /// A labelled dropdown.
@@ -449,7 +443,7 @@ fn pick<T: Clone + PartialEq + 'static>(
     value: &T,
     on: impl Fn(T) -> Message + 'static,
 ) -> El {
-    field(t(label), choose(label, options, value, on))
+    setting_row(t(label), choose(label, options, value, on))
 }
 
 /// A switch that saves at once.
@@ -459,52 +453,51 @@ fn switch(label: &str, on: bool, partial: impl Fn(bool) -> Value) -> El {
 
 fn general(app: &App) -> Vec<El> {
     let s = &app.settings;
-    vec![section(
-        None,
-        vec![
-            pick("language", vec![opt(Locale::Ja, "日本語"), opt(Locale::En, "English")], &s.locale, |v| {
-                msg(Msg::Save(json!({ "locale": v })))
-            }),
-            pick(
-                "layout",
-                vec![opt(Layout::Compact, t("layoutCompact")), opt(Layout::Expanded, t("layoutExpanded"))],
-                &s.window.layout,
-                |v| msg(Msg::Save(json!({ "window": { "layout": v } }))),
-            ),
-            switch("checkUpdates", s.updates.check, |v| json!({ "updates": { "check": v } })),
-        ],
-    )]
+    vec![
+        section(
+            None,
+            vec![
+                pick("language", vec![opt(Locale::Ja, "日本語"), opt(Locale::En, "English")], &s.locale, |v| {
+                    msg(Msg::Save(json!({ "locale": v })))
+                }),
+                pick(
+                    "layout",
+                    vec![opt(Layout::Compact, t("layoutCompact")), opt(Layout::Expanded, t("layoutExpanded"))],
+                    &s.window.layout,
+                    |v| msg(Msg::Save(json!({ "window": { "layout": v } }))),
+                ),
+                switch("checkUpdates", s.updates.check, |v| json!({ "updates": { "check": v } })),
+            ],
+        ),
+        // The version and the logs, for when something needs reporting.
+        row()
+            .w_full()
+            .pl(g(2.0))
+            .child(line(tf("version", &[("v", &app.info.version)]), tokens::SMALL, p().muted))
+            .child(fill())
+            .child(form::link(theme::plain(t("openLogs"), tokens::SMALL), msg(Msg::OpenLogs)))
+            .into_any_element(),
+    ]
 }
 
-/// 詳細設定: closed at first, under a section's card.
+/// 詳細設定: closed at first, a panel of its own under a section's.
 fn advanced(open: bool, rows: Vec<El>) -> El {
-    let ink = p().ink;
-    let summary = clickable(Some(msg(Msg::ToggleAdvanced)), "advanced")
+    let hover = p().hover_panel;
+    let head = clickable(Some(msg(Msg::ToggleAdvanced)), "advanced")
         .flex()
         .items_center()
         .w_full()
-        .py(px(10.0))
-        .text_color(p().ink_muted)
-        .hover(move |s| s.text_color(ink))
-        .child(theme::plain(t("advanced"), tokens::CAPTION).medium().flex_1())
-        .child(icon(if open { Icon::ChevronDown } else { Icon::ChevronRight }, 15.0, p().ink_muted));
-    let mut c = col().w_full().child(summary);
+        .h(g(7.0))
+        .px(g(2.0))
+        .rounded(g(2.0))
+        .hover(move |s| s.bg(hover))
+        .child(line(t("advanced"), tokens::BODY, p().ink).flex_1())
+        .child(icon(if open { Icon::ChevronDown } else { Icon::ChevronRight }, 16.0, p().muted));
+    let mut all = vec![head.into_any_element()];
     if open {
-        c = c.child(hairline());
-        let n = rows.len();
-        for (i, r) in rows.into_iter().enumerate() {
-            c = c.child(r);
-            if i + 1 < n {
-                c = c.child(hairline());
-            }
-        }
+        all.extend(rows);
     }
-    c.px(px(14.0))
-        .bg(p().surface_raised)
-        .border_1()
-        .border_color(p().border)
-        .rounded(px(tokens::RADIUS_LG))
-        .into_any_element()
+    panel(all)
 }
 
 /// A value on a scale, stepped with − and + and saved at each step; a bar shows where it sits.
@@ -520,14 +513,14 @@ fn slider_row(label: String, range: std::ops::RangeInclusive<f32>, step: f32, va
         .flex_1()
         .h(px(4.0))
         .rounded(px(2.0))
-        .bg(p().border)
-        .child(div().h_full().w(gpui_kit::relative(frac)).rounded(px(2.0)).bg(p().accent));
-    let r = row().w_full().gap(px(10.0)).child(btn("−", Variant::Secondary, Size::Sm, down)).child(bar).child(btn(
-        "+",
-        Variant::Secondary,
-        Size::Sm,
-        up,
-    ));
+        .bg(p().line)
+        .child(div().h_full().w(gpui_kit::relative(frac)).rounded(px(2.0)).bg(p().ink));
+    let r = row()
+        .w_full()
+        .gap(g(1.0))
+        .child(icon_button(Icon::Minus, t("decrease"), Size::Sm, down))
+        .child(bar)
+        .child(icon_button(Icon::Plus, t("increase"), Size::Sm, up));
     field(label, r)
 }
 
@@ -590,6 +583,7 @@ fn transcription(app: &App, ui: &mut Ui) -> Vec<El> {
                 toggle_row(t("useGpu"), s.use_gpu, gpu.then(|| msg(Msg::Save(json!({ "useGpu": !s.use_gpu }))))),
                 switch("accuracyFirst", s.accuracy_first, |v| json!({ "accuracyFirst": v })),
                 switch("partials", s.partials, |v| json!({ "partials": v })),
+                model_row(app),
                 field(t("vocabulary"), vocab),
             ],
         ),
@@ -601,6 +595,26 @@ fn transcription(app: &App, ui: &mut Ui) -> Vec<El> {
             ],
         ),
     ]
+}
+
+/// The model in use, opening the model list.
+fn model_row(app: &App) -> El {
+    let name = super::models::model_name(&app.models, &app.settings.model_id)
+        .map_or_else(|| app.settings.model_id.clone(), |n| n.short);
+    let hover = p().hover_panel;
+    clickable(Some(msg(Msg::Open(SettingsTab::Models))), "models-row")
+        .flex()
+        .items_center()
+        .gap(g(2.0))
+        .w_full()
+        .h(g(7.0))
+        .px(g(2.0))
+        .rounded(g(2.0))
+        .hover(move |s| s.bg(hover))
+        .child(line(t("tabModels"), tokens::BODY, p().ink).flex_1())
+        .child(line(name, tokens::LABEL, p().muted).max_w(g(24.0)))
+        .child(icon(Icon::ChevronRight, 16.0, p().muted))
+        .into_any_element()
 }
 
 fn screenshots(app: &App) -> Vec<El> {
@@ -638,32 +652,29 @@ pub fn hotkey_input(app: &App, which: Hotkey) -> El {
     } else {
         value.to_string()
     };
-    let text = line(shown, tokens::BODY_SMALL, if set || recording { p().ink } else { p().ink_muted });
+    let text = line(shown, tokens::LABEL, if set || recording { p().ink } else { p().muted });
     let text = if set { text.mono() } else { text };
     let pal = p();
-    let strong = pal.border_strong;
+    let hover = pal.line;
     let mut keys = clickable(Some(msg(Msg::Record(which))), ("hotkey", which.key()))
         .flex()
         .items_center()
         .flex_1()
         .min_w_0()
-        .h(px(32.0))
-        .px(px(10.0))
-        .bg(pal.surface_sunken)
-        .border_1()
-        .border_color(if recording { pal.accent } else { pal.border })
-        .rounded(px(tokens::RADIUS_MD))
+        .h(g(4.0))
+        .px(g(2.0))
+        .bg(pal.ground)
+        .rounded(g(2.0))
         .child(text);
-    if !recording {
-        keys = keys.hover(move |s| s.border_color(strong));
-    }
-    let mut r = row().w_full().gap(px(6.0)).child(keys);
+    // Waiting for keys, the box is ringed in ink.
+    keys = if recording { keys.border_2().border_color(pal.ink) } else { keys.hover(move |s| s.bg(hover)) };
+    let mut r = row().w_full().gap(g(1.0)).child(keys);
     if set {
-        r = r.child(btn(t("hotkeyClear"), Variant::Secondary, Size::Md, Some(msg(Msg::ClearHotkey(which)))));
+        r = r.child(btn(t("hotkeyClear"), Variant::Ghost, Size::Sm, Some(msg(Msg::ClearHotkey(which)))));
     }
-    let mut c = col().w_full().gap(px(tokens::SPACE_1)).child(r);
+    let mut c = col().w_full().gap(g(1.0)).child(r);
     if let Some(error) = app.info.hotkey_errors.get(which.key()) {
-        c = c.child(theme::t(tf("hotkeyFailed", &[("error", error)]), tokens::CAPTION, p().danger).medium());
+        c = c.child(theme::t(tf("hotkeyFailed", &[("error", error)]), tokens::SMALL, p().them).bold());
     }
     field(t(which.label_key()), c)
 }
@@ -671,31 +682,25 @@ pub fn hotkey_input(app: &App, which: Hotkey) -> El {
 fn output(app: &App, ui: &mut Ui) -> Vec<El> {
     let s = &app.settings;
     let pal = p();
-    let root = line(s.output.root.clone(), tokens::CAPTION, pal.ink)
+    let root = line(s.output.root.clone(), tokens::SMALL, pal.ink)
         .flex_1()
         .min_w_0()
-        .py(px(7.0))
-        .px(px(10.0))
-        .bg(pal.surface_sunken)
-        .border_1()
-        .border_color(pal.border)
-        .rounded(px(tokens::RADIUS_MD));
-    let folder = row().w_full().gap(px(6.0)).child(root).child(btn(
+        .py(g(1.0))
+        .px(g(2.0))
+        .bg(pal.ground)
+        .rounded(g(2.0));
+    let folder = row().w_full().gap(g(1.0)).child(root).child(btn(
         t("change"),
-        Variant::Secondary,
-        Size::Md,
+        Variant::Ghost,
+        Size::Sm,
         Some(msg(Msg::PickFolder)),
     ));
     let template = app.settings_ui.template.as_deref().unwrap_or(&s.output.title_template);
     let template = col()
         .w_full()
-        .gap(px(6.0))
+        .gap(g(1.0))
         .child(ui.input(Field::new(TEMPLATE, template, |v| msg(Msg::Template(v))).on_submit(msg(Msg::Leave))))
-        .child(line(
-            tf("titleTemplateHelp", &[("app", &"{app}"), ("date", &"{date}")]),
-            tokens::CAPTION,
-            p().ink_muted,
-        ));
+        .child(line(tf("titleTemplateHelp", &[("app", &"{app}"), ("date", &"{date}")]), tokens::SMALL, p().muted));
     let labels = [(LabelMode::Auto, "labelsAuto"), (LabelMode::On, "labelsOn"), (LabelMode::Off, "labelsOff")];
     vec![
         section(None, vec![field(t("outputRoot"), folder), field(t("titleTemplate"), template)]),

@@ -1,18 +1,14 @@
-//! Drawing the session's line, the apps' sound and the mic test: paths, strokes, rectangles and
-//! small text, recorded into a frame and painted by a GPUI canvas. The vocabulary is the one the
+//! Drawing the session's line, the apps' sound and the mic test: paths, strokes, rectangles,
+//! recorded into a frame and painted by a GPUI canvas. The vocabulary is the one the
 //! drawing code was written in (Iced's canvas), so the geometry stays as it was.
 
 use std::cell::Cell;
 use std::rc::Rc;
 
-use gpui_kit::{
-    Bounds, Canvas, Font, FontFeatures, FontStyle, FontWeight, PathBuilder, PathStyle, Pixels, SharedString, TextAlign,
-    TextRun, Window, canvas, point, px, size,
-};
+use gpui_kit::{Bounds, Canvas, PathBuilder, PathStyle, Pixels, Window, canvas, point, px, size};
 use lyon_tessellation::StrokeOptions;
 
 use crate::theme::Color;
-use crate::ui::Cx;
 
 #[derive(Debug, Clone, Copy, PartialEq, Default)]
 pub struct Point {
@@ -92,13 +88,6 @@ impl Path {
         let mut b = Builder::default();
         f(&mut b);
         Self { segs: b.segs }
-    }
-
-    pub fn line(a: Point, b: Point) -> Self {
-        Self::new(|p| {
-            p.move_to(a);
-            p.line_to(b);
-        })
     }
 
     pub fn circle(c: Point, r: f32) -> Self {
@@ -181,21 +170,10 @@ impl Stroke<'_> {
     }
 }
 
-/// A line of text centred on a point.
-#[derive(Debug, Clone)]
-pub struct Text {
-    pub content: String,
-    pub position: Point,
-    pub color: Color,
-    pub size: f32,
-    pub font: &'static str,
-}
-
 enum Op {
     Fill(Path, Color),
     Stroke { path: Path, color: Color, width: f32, cap: LineCap, join: LineJoin, dash: Vec<f32> },
     Rect(Point, Size, Color),
-    Text(Text),
 }
 
 /// What a canvas draws, in order, in its own coordinates (0,0 at its top left).
@@ -242,11 +220,7 @@ impl Frame {
         }
     }
 
-    pub fn fill_text(&mut self, text: Text) {
-        self.ops.push(Op::Text(text));
-    }
-
-    fn paint(self, at: gpui_kit::Point<Pixels>, window: &mut Window, cx: &mut Cx) {
+    fn paint(self, at: gpui_kit::Point<Pixels>, window: &mut Window) {
         for op in self.ops {
             match op {
                 Op::Fill(path, color) => {
@@ -277,30 +251,6 @@ impl Frame {
                     let b = Bounds::new(point(at.x + px(p.x), at.y + px(p.y)), size(px(s.width), px(s.height)));
                     window.paint_quad(gpui_kit::fill(b, color));
                 }
-                Op::Text(t) => {
-                    let font = Font {
-                        family: t.font.into(),
-                        features: FontFeatures::default(),
-                        fallbacks: None,
-                        weight: FontWeight::NORMAL,
-                        style: FontStyle::Normal,
-                    };
-                    let run = TextRun {
-                        len: t.content.len(),
-                        font,
-                        color: t.color.into(),
-                        background_color: None,
-                        underline: None,
-                        strikethrough: None,
-                    };
-                    let shaped =
-                        window.text_system().shape_line(SharedString::from(t.content), px(t.size), &[run], None);
-                    let w = shaped.width;
-                    let lh = px(t.size * 1.3);
-                    let x = at.x + px(t.position.x) - w / 2.0;
-                    let y = at.y + px(t.position.y) - lh / 2.0;
-                    let _ = shaped.paint(point(x, y), lh, TextAlign::Left, None, window, cx);
-                }
             }
         }
     }
@@ -319,11 +269,11 @@ pub fn canvas_el(
             }
             b
         },
-        move |_, b, window, cx| {
+        move |_, b, window, _| {
             let mut frame = Frame::new(Size::new(b.size.width.into(), b.size.height.into()));
             draw(&mut frame);
             window.with_content_mask(Some(gpui_kit::ContentMask { bounds: b }), |window| {
-                frame.paint(b.origin, window, cx);
+                frame.paint(b.origin, window);
             });
         },
     )

@@ -1,28 +1,29 @@
 //! A past session opened from 履歴: read, play, edit lines, rename, copy, export (FR-41, FR-62). It
-//! has its own transcript, so a recording that runs meanwhile keeps its own.
+//! has its own transcript, so a recording that runs meanwhile keeps its own. It looks like the
+//! session that just finished in 録音, with a way back to 履歴 on its card.
 
 use std::time::Duration;
 
 use chidori_core::error::AppError;
 use chidori_core::ops::{self, SessionView};
-use gpui_kit::{IntoElement, ParentElement, Styled, div, px};
+use gpui_kit::{IntoElement, ParentElement, Styled, div};
 
-use super::main_view::deck::{self, DeckAnim, DeckCtx, DeckMsg, DeckState};
+use super::main_view::card::{self, CardMsg, CardState, SessionCtx};
 use super::main_view::playback::{Player, Status};
-use super::main_view::transcript::{self, Ctx, LINE_Y, ListMsg, ListState};
-use super::main_view::{headers, rows};
+use super::main_view::rows;
+use super::main_view::transcript::{self, Ctx, ListMsg, ListState};
 use crate::app::{App, Level, Message, View, call};
 use crate::i18n::t;
 use crate::model::transcript::Transcript;
 use crate::task::Task;
-use crate::theme::{line, p, tokens};
+use crate::theme::{g, line, p, tokens};
 use crate::ui::{El, KeyPress, Ui};
 use crate::widgets::{col, spinner};
 
 pub struct State {
     pub transcript: Transcript,
     pub list: ListState,
-    pub deck: DeckAnim,
+    pub card: CardState,
     pub player: Player,
     pub playing_ms: Option<u64>,
     /// The session asked for could not be read.
@@ -34,7 +35,7 @@ impl Default for State {
         Self {
             transcript: Transcript::default(),
             list: ListState::new("viewer"),
-            deck: DeckAnim::default(),
+            card: CardState::default(),
             player: Player::default(),
             playing_ms: None,
             failed: false,
@@ -46,7 +47,7 @@ impl Default for State {
 pub enum Msg {
     Loaded(String, Result<Box<SessionView>, AppError>),
     List(ListMsg),
-    Deck(DeckMsg),
+    Card(CardMsg),
     PlayTick,
     Escape,
 }
@@ -55,8 +56,8 @@ fn wrap_list(m: ListMsg) -> Message {
     Message::Viewer(Msg::List(m))
 }
 
-fn wrap_deck(m: DeckMsg) -> Message {
-    Message::Viewer(Msg::Deck(m))
+fn wrap_card(m: CardMsg) -> Message {
+    Message::Viewer(Msg::Card(m))
 }
 
 pub fn update(app: &mut App, msg: Msg) -> Task {
@@ -83,10 +84,15 @@ pub fn update(app: &mut App, msg: Msg) -> Task {
         Msg::List(m) => {
             let core = app.core.clone();
             let v = &mut app.viewer;
-            transcript::update(&core, &mut v.list, &mut v.transcript, m, wrap_list, true)
+            transcript::update(&core, &mut v.list, &mut v.transcript, m, wrap_list)
         }
-        Msg::Deck(DeckMsg::Seek(ms)) => update(app, Msg::List(ListMsg::Seek(ms))),
-        Msg::Deck(DeckMsg::Play) => {
+        Msg::Card(CardMsg::Seek(ms)) => {
+            if app.viewer.player.status() != Status::Idle {
+                play_from(app, ms);
+            }
+            update(app, Msg::List(ListMsg::Seek(ms)))
+        }
+        Msg::Card(CardMsg::Play) => {
             match app.viewer.player.status() {
                 Status::Playing => app.viewer.player.pause(),
                 Status::Paused => app.viewer.player.resume(),
@@ -94,12 +100,12 @@ pub fn update(app: &mut App, msg: Msg) -> Task {
             }
             Task::none()
         }
-        Msg::Deck(DeckMsg::Export(id)) => {
+        Msg::Card(CardMsg::Export(id)) => {
             super::dialogs::ask_export(app, id);
             Task::none()
         }
         // A past session has no camera.
-        Msg::Deck(DeckMsg::ShotMenu | DeckMsg::ShotWindows(_)) => Task::none(),
+        Msg::Card(CardMsg::ShotMenu | CardMsg::ShotWindows(_)) => Task::none(),
         Msg::PlayTick => {
             if app.view != View::Session {
                 stop(app);
@@ -111,9 +117,9 @@ pub fn update(app: &mut App, msg: Msg) -> Task {
                 v.player.reset();
             }
             v.playing_ms = v.player.position();
-            let rows = v.list.rows(&v.transcript, true);
+            let rows = v.list.rows(&v.transcript);
             let key = v.playing_ms.and_then(|ms| rows::playing_key(&v.transcript, &rows, ms));
-            let task = v.list.follow_playing(&v.transcript, true, key);
+            let task = v.list.follow_playing(&v.transcript, key);
             if status == Status::Failed {
                 app.toast(t("audioMissing"), Level::Warn);
             }
@@ -152,7 +158,6 @@ pub fn open(app: &mut App, id: String) -> Task {
     v.list.reset();
     v.list.stay();
     v.failed = false;
-    v.deck.forget();
     call(
         app,
         {
@@ -163,22 +168,8 @@ pub fn open(app: &mut App, id: String) -> Task {
     )
 }
 
-pub fn tick(app: &mut App) -> Task {
-    if app.view != View::Session {
-        app.viewer.deck.forget();
-    }
+pub fn tick(_app: &mut App) -> Task {
     Task::none()
-}
-
-pub fn animating(app: &App) -> bool {
-    app.view == View::Session && app.viewer.deck.moving(app.now)
-}
-
-/// Keeps the deck fresh for when the view shows again.
-pub fn housekeeping(app: &App) {
-    if app.view != View::Session {
-        app.viewer.deck.forget();
-    }
 }
 
 /// Escape closes what is open.
@@ -205,53 +196,44 @@ fn select(app: &App) -> (&Transcript, &ListState) {
     (&app.viewer.transcript, &app.viewer.list)
 }
 
-fn header(app: &App) -> El {
-    headers::session_header(app, &app.viewer.transcript, &app.viewer.list, wrap_list)
-}
-
 pub fn view(app: &App, ui: &mut Ui) -> El {
     let v = &app.viewer;
     let tr = &v.transcript;
     if tr.session_id.is_none() {
         let body: El = if v.failed {
-            line(t("loadFailed"), tokens::BODY_SMALL, p().ink_muted).into_any_element()
+            line(t("loadFailed"), tokens::BODY, p().muted).into_any_element()
         } else {
-            spinner(20.0, app.now)
+            spinner(24.0, app.now)
         };
         return div().size_full().flex().items_center().justify_center().child(body).into_any_element();
     }
-    v.deck.observe(DeckState::Review, 0);
     let player = tr.folder.is_some() && !tr.audio.is_empty();
-    let ctx = DeckCtx {
+    let c = SessionCtx {
         app,
         tr,
-        anim: &v.deck,
-        compact: false,
-        state: DeckState::Review,
+        state: &v.card,
         player,
         playing: v.player.playing(),
         playing_ms: v.playing_ms,
         on_new: false,
-        wrap: wrap_deck,
+        back: true,
+        wrap: wrap_card,
     };
-    let deck_el = deck::view(ctx);
-    let list = transcript::view(
-        app,
-        Ctx {
-            select,
-            live: false,
-            editable: true,
-            header: Some(header as fn(&App) -> El),
-            playable: player,
-            wrap: wrap_list,
-            under: LINE_Y,
-        },
-        ui,
-    );
-    div()
-        .relative()
+    let input = v.list.title.as_ref().map(|draft| {
+        card::title_box(
+            ui,
+            v.list.title_key.clone(),
+            draft,
+            |s| wrap_list(ListMsg::TitleInput(s)),
+            wrap_list(ListMsg::TitleSave),
+        )
+    });
+    let list =
+        transcript::view(app, Ctx { select, live: false, editable: true, playable: player, wrap: wrap_list }, ui);
+    col()
         .size_full()
-        .child(div().absolute().top_0().left_0().right_0().bottom(px(deck::EXPANDED.height - LINE_Y)).child(list))
-        .child(col().absolute().inset_0().justify_end().child(deck_el))
+        .child(div().flex_none().px(g(2.0)).child(card::session_card(c, input, wrap_list(ListMsg::RenameStart))))
+        .child(div().flex_1().min_h_0().w_full().child(list))
+        .child(card::review_bar(c))
         .into_any_element()
 }

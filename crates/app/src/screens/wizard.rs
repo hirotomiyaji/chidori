@@ -1,6 +1,6 @@
 //! The setup wizard (section 5, FR-70): welcome → model → download and speed test → a 10-second
-//! mic test → shortcuts (optional) → done. Its title and step bar are its app bar, so the
-//! kamon's rule runs under them (DECISIONS → UI, "The kamon's double line").
+//! mic test → shortcuts (optional) → done. Its title and step bar are its app bar, with a hairline
+//! under them.
 
 use std::time::Instant;
 
@@ -25,9 +25,9 @@ use crate::model::format::bytes;
 use crate::model::line::{height_of, settle, smooth};
 use crate::paint::{LineCap, LineJoin, Path, Point, Stroke, canvas_el};
 use crate::task::Task;
-use crate::theme::{self, line, p, tokens};
+use crate::theme::{self, g, line, p, tokens};
 use crate::ui::{El, clickable};
-use crate::widgets::{Size, Variant, btn, btn_icon, col, fill, hairline, row, rule, spinner};
+use crate::widgets::{Size, Variant, btn, btn_icon, col, fill, hairline, row, spinner};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Step {
@@ -260,14 +260,14 @@ pub fn view(app: &App) -> El {
     let mut bar = row().w_full().gap(px(6.0));
     for n in 0..STEPS.len() {
         let done = n <= i;
-        bar = bar.child(div().flex_1().h(px(4.0)).rounded(px(2.0)).bg(if done { p().accent } else { p().border }));
+        bar = bar.child(div().flex_1().h(px(4.0)).rounded(px(2.0)).bg(if done { p().ink } else { p().line }));
     }
     let head = col()
         .w_full()
         .flex_none()
         .child(form::head(t(step.title_key()), Some(format!("{} / {}", i + 1, STEPS.len()))))
-        .child(div().w_full().px(px(tokens::SPACE_4)).pb(px(tokens::SPACE_3)).child(bar))
-        .child(div().w_full().px(px(tokens::SPACE_3)).child(rule()));
+        .child(div().w_full().px(g(2.0)).pb(g(2.0)).child(bar))
+        .child(div().w_full().px(g(2.0)).child(hairline()));
     let body: El = match step {
         Step::Welcome => intro(Icon::ShieldCheck, t("wizardWelcomeBody")),
         Step::Model => model_step(app),
@@ -287,17 +287,17 @@ pub fn view(app: &App) -> El {
 
 /// A step's icon over its one line.
 fn intro(which: Icon, text: String) -> El {
-    col().gap(px(tokens::SPACE_3)).child(icon(which, 28.0, p().ink)).child(form::para(text)).into_any_element()
+    col().gap(g(2.0)).child(icon(which, 28.0, p().ink)).child(form::para(text)).into_any_element()
 }
 
 fn footer(app: &App) -> El {
     let w = &app.wizard;
-    let mut r = row().w_full().flex_none().px(px(tokens::SPACE_4)).pt(px(10.0)).pb(px(tokens::SPACE_3));
+    let mut r = row().w_full().flex_none().px(g(2.0)).pt(px(10.0)).pb(g(2.0));
     if w.step > 0 {
         r = r.child(btn(t("back"), Variant::Secondary, Size::Md, Some(msg(Msg::Back))));
     }
     r = r.child(fill());
-    let mut end = row().gap(px(tokens::SPACE_2));
+    let mut end = row().gap(g(1.0));
     if w.step() == Step::MicTest {
         end = end.child(btn(t("skip"), Variant::Ghost, Size::Md, Some(msg(Msg::Next))));
     }
@@ -312,7 +312,7 @@ fn footer(app: &App) -> El {
 /// The visible models as choices, the recommended one picked until another is.
 fn model_step(app: &App) -> El {
     let id = chosen_id(app);
-    let mut cards = col().w_full().gap(px(tokens::SPACE_2));
+    let mut cards = col().w_full().gap(g(1.0));
     for m in app.models.iter().filter(|m| !m.entry.hidden || m.installed) {
         let on = m.entry.id == id;
         let mut name = div().flex().flex_wrap().items_center().gap(px(6.0)).child(theme::t(
@@ -333,12 +333,12 @@ fn model_step(app: &App) -> El {
             .gap(px(10.0))
             .w_full()
             .child(div().pt(px(3.0)).child(form::radio_mark(on)))
-            .child(col().flex_1().min_w_0().child(name).child(theme::t(about, tokens::CAPTION, p().ink_muted)));
-        let strong = p().border_strong;
+            .child(col().flex_1().min_w_0().child(name).child(theme::t(about, tokens::SMALL, p().muted)));
+        let strong = p().line;
         let mut card =
             form::card_style(clickable(Some(msg(Msg::Choose(m.entry.id.clone()))), ("model", &m.entry.id)), on)
                 .w_full()
-                .p(px(tokens::SPACE_3))
+                .p(g(2.0))
                 .child(content);
         if !on {
             card = card.hover(move |s| s.border_color(strong));
@@ -352,7 +352,7 @@ fn download_step(app: &App) -> El {
     let w = &app.wizard;
     let Some(m) = chosen(app) else { return crate::app::nothing() };
     let p_ = app.models_ui.progress.get(&m.entry.id);
-    let mut c = col().w_full().gap(px(tokens::SPACE_3)).child(theme::t(
+    let mut c = col().w_full().gap(g(2.0)).child(theme::t(
         format!("{} · {}", name_of(m), bytes(m.entry.size_bytes)),
         tokens::LABEL,
         p().ink,
@@ -364,38 +364,36 @@ fn download_step(app: &App) -> El {
             let checksum = failed.error.as_ref().is_some_and(|e| e.code == ErrorCode::ModelChecksum);
             c = c.child(
                 row()
-                    .gap(px(tokens::SPACE_2))
+                    .gap(g(1.0))
                     .child(theme::t(
                         t(if checksum { "checksumError" } else { "networkError" }),
-                        tokens::CAPTION,
-                        p().danger,
+                        tokens::SMALL,
+                        p().them,
                     ))
                     .child(btn(t("retry"), Variant::Secondary, Size::Sm, Some(msg(Msg::Retry)))),
             );
         }
         return c.into_any_element();
     }
-    let mut done =
-        col().gap(px(tokens::SPACE_1)).child(line(format!("✓ {}", t("installed")), tokens::CAPTION, p().success));
+    let mut done = col().gap(g(1.0)).child(line(format!("✓ {}", t("installed")), tokens::SMALL, p().me));
     if w.benching {
         done = done.child(row().gap(px(4.0)).child(spinner(13.0, app.now)).child(line(
             format!("{}…", t("benchmark")),
-            tokens::CAPTION,
-            p().ink_muted,
+            tokens::SMALL,
+            p().muted,
         )));
     }
     if let Some(b) = &w.bench {
         let b = Bench::from(b);
-        let tone = if b.heavy() { p().warning } else { p().success };
-        done = done.child(theme::t(b.text(), tokens::CAPTION, tone));
+        let tone = if b.heavy() { p().them } else { p().me };
+        done = done.child(theme::t(b.text(), tokens::SMALL, tone));
         if b.heavy() && m.entry.id != LIGHT_MODEL_ID {
-            done =
-                done.child(
-                    row()
-                        .gap(px(tokens::SPACE_2))
-                        .child(theme::t(t("tierHeavyHint"), tokens::CAPTION, tone))
-                        .child(btn(t("download"), Variant::Secondary, Size::Sm, Some(msg(Msg::UseLight)))),
-                );
+            done = done.child(row().gap(g(1.0)).child(theme::t(t("tierHeavyHint"), tokens::SMALL, tone)).child(btn(
+                t("download"),
+                Variant::Secondary,
+                Size::Sm,
+                Some(msg(Msg::UseLight)),
+            )));
         }
     }
     c.child(done).into_any_element()
@@ -419,21 +417,21 @@ fn mic_step(app: &App) -> El {
     };
     let mut c = col()
         .w_full()
-        .gap(px(tokens::SPACE_3))
+        .gap(g(2.0))
         .child(icon(Icon::Mic, 28.0, p().ink))
         .child(form::para(t("wizardMicTestBody")))
-        .child(row().gap(px(tokens::SPACE_3)).child(test).child(wave(app)));
+        .child(row().gap(g(2.0)).child(test).child(wave(app)));
     if let Some(mic) = &w.mic {
         let mut result = col();
         if let Some(device) = &mic.device {
-            result = result.child(line(device.clone(), tokens::CAPTION, p().ink_muted).pb(px(tokens::SPACE_1)));
+            result = result.child(line(device.clone(), tokens::SMALL, p().muted).pb(g(1.0)));
         }
         if mic.text.is_empty() {
-            result = result.child(theme::t(t("wizardMicNothing"), tokens::CAPTION, p().ink_muted));
+            result = result.child(theme::t(t("wizardMicNothing"), tokens::SMALL, p().muted));
         } else {
-            result = result.child(line(t("wizardMicResult"), tokens::CAPTION, p().ink_muted)).child(theme::t(
+            result = result.child(line(t("wizardMicResult"), tokens::SMALL, p().muted)).child(theme::t(
                 mic.text.clone(),
-                tokens::BODY_SMALL,
+                tokens::BODY,
                 p().ink,
             ));
         }
@@ -445,7 +443,7 @@ fn mic_step(app: &App) -> El {
 fn hotkey_step(app: &App) -> El {
     col()
         .w_full()
-        .gap(px(tokens::SPACE_3))
+        .gap(g(2.0))
         .child(icon(Icon::Keyboard, 28.0, p().ink))
         .child(form::para(t("wizardHotkeysBody")))
         .child(
@@ -518,11 +516,11 @@ fn wave(app: &App) -> El {
             }
             b.line_to(Point::new(WAVE_W, BASE));
         });
-        frame.stroke(&ahead, stroke(p().border_strong));
+        frame.stroke(&ahead, stroke(p().line));
         if pts.len() > 1 {
-            frame.stroke(&Path::new(|b| smooth(b, &pts, false)), stroke(p().accent));
+            frame.stroke(&Path::new(|b| smooth(b, &pts, false)), stroke(p().ink));
         }
-        frame.fill(&Path::circle(pen, if active { 3.5 } else { 5.0 }), p().accent);
+        frame.fill(&Path::circle(pen, if active { 3.5 } else { 5.0 }), p().ink);
     })
     .flex_none()
     .w(px(WAVE_W))

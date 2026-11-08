@@ -1,10 +1,9 @@
 //! What to listen to: the source picker's choice (FR-10, FR-11, FR-12), and how loud each app it
-//! shows is (the waves beside their names).
+//! shows is (whether its row says it is playing).
 
 use std::collections::HashMap;
 use std::time::{Duration, Instant};
 
-use crate::paint::Picture;
 use chidori_core::audio::source::{AppLevel, AudioApp, Device};
 use chidori_core::recorder::{AppRef, SourceConfig};
 use chidori_core::settings::{Settings, SourceMode};
@@ -26,8 +25,6 @@ pub struct SourceChoice {
     pub include_mic: bool,
     pub mic_device_id: Option<String>,
     pub apps: Vec<AudioApp>,
-    /// Each app's icon, decoded once from its data URL.
-    pub icons: HashMap<String, Picture>,
     pub devices: Vec<Device>,
     pub loading_apps: bool,
 }
@@ -51,19 +48,8 @@ impl SourceChoice {
         {
             *current = ChosenApp { exe: m.exe.clone(), name: m.name.clone(), root_pid: m.root_pid };
         }
-        for a in &apps {
-            if !self.icons.contains_key(&a.exe)
-                && let Some(handle) = a.icon_data_url.as_deref().and_then(icon_from_data_url)
-            {
-                self.icons.insert(a.exe.clone(), handle);
-            }
-        }
         self.apps = apps;
         self.loading_apps = false;
-    }
-
-    pub fn icon_of(&self, exe: &str) -> Option<&Picture> {
-        self.icons.get(exe)
     }
 
     pub fn config(&self) -> SourceConfig {
@@ -87,22 +73,6 @@ impl SourceChoice {
                 if c.root_pid != 0 { c.root_pid == a.root_pid } else { c.exe.eq_ignore_ascii_case(&a.exe) }
             })
     }
-
-    pub fn mic_name(&self) -> Option<String> {
-        match &self.mic_device_id {
-            Some(id) => self.devices.iter().find(|d| &d.id == id).map(|d| d.name.clone()),
-            None => self.devices.iter().find(|d| d.is_default).map(|d| d.name.clone()),
-        }
-    }
-}
-
-fn icon_from_data_url(url: &str) -> Option<Picture> {
-    use base64::Engine as _;
-    let (_, b64) = url.split_once(";base64,")?;
-    let bytes = base64::engine::general_purpose::STANDARD.decode(b64).ok()?;
-    let img = ::image::load_from_memory(&bytes).ok()?.into_rgba8();
-    let (w, h) = img.dimensions();
-    Picture::from_rgba(w, h, img.into_raw())
 }
 
 /// One step of a wave: ten a second, like the recording's line.

@@ -1,12 +1,13 @@
 //! The transcript: a list that builds only the rows in view (a long session stays as cheap as a
-//! short one), following the newest line until the reader scrolls up (FR-40). Turns name the
-//! speaker only when both sides were recorded; the words still coming are pencil grey and darken
-//! into place; screenshots sit where they were taken; markers are rules with what happened. A
-//! finished session's lines can be played from, starred, edited and deleted; a live one's starred.
-//! The compact window shows the last two lines instead.
+//! short one), following the newest line until the reader scrolls up (FR-40). Every line is a white
+//! bubble, 相手 on the left and 自分 on the right; a turn's first line has the speaker's name in
+//! their colour and the time above it. The words still coming are a hollow bubble in faint text. A
+//! starred line has an ink ring and ★, as does the line being played. Screenshots are one-line
+//! markers where they were taken, and markers say what happened. A finished session's lines can be
+//! played from, starred, edited and deleted; a live one's starred. The compact window shows the
+//! latest line instead.
 
 use std::cell::{Cell, RefCell};
-use std::collections::{HashMap, HashSet};
 use std::hash::{Hash, Hasher};
 use std::path::PathBuf;
 use std::rc::Rc;
@@ -19,7 +20,7 @@ use chidori_core::ops;
 use chidori_core::session::model::{Marker, MarkerKind, Screenshot, Segment, SourceId, TimelineItem};
 use gpui_kit::{
     FollowMode, InteractiveElement, IntoElement, ListAlignment, ListOffset, ParentElement, SharedString, Styled, div,
-    img, list as gpui_list, px,
+    list as gpui_list, px,
 };
 
 use super::rows::{self, Row, RowKind, Rows};
@@ -28,26 +29,25 @@ use crate::i18n::{t, tf};
 use crate::icons::{Icon, icon};
 use crate::model::format::{day_of, day_text};
 use crate::model::transcript::Transcript;
-use crate::paint::Picture;
+use crate::motion::{self, Look};
 use crate::task::{self, Task};
-use crate::theme::{self, Color, Ink, line, mix, p, tokens};
+use crate::theme::{self, Color, GRID, Ink, R_NOTCH, R_ROW, g, line, mix, p, tokens};
 use crate::ui::{self, El, Field, Ui, clickable};
-use crate::widgets::{Size, Variant, btn_with, col, fill, floating, frame, nothing, row, spinner, with_tip};
+use crate::widgets::{Size, Variant, btn, col, fill, floating, nothing, row, spinner, with_tip};
 
-/// How far below the expanded deck's top its line lies; the transcript runs on under the deck down
-/// to it, so only the tint under the line covers the text.
-pub const LINE_Y: f32 = 30.0;
 /// Speech this far behind is shown as being written. A fast GPU writes a line well within it, so
 /// the note only appears where text is slow to come, such as on a CPU, which has no grey partials.
 const WRITING_MS: u64 = 1_500;
 /// The room the note takes under the last line.
-const WRITING_H: f32 = 28.0;
+const WRITING_H: f32 = 3.0 * GRID;
 /// The widest the lines run, however wide the window.
 const MAX_W: f32 = 760.0;
 /// Rows built beyond the view, above and below.
 const OVERSCAN: f32 = 360.0;
 /// The side padding of a row.
-const PAD_X: f32 = 18.0;
+const PAD_X: f32 = 2.0 * GRID;
+/// The widest a bubble gets in the 420 px window; wider windows give it a like share.
+const BUBBLE_W: f32 = 37.0 * GRID;
 
 pub type Wrap = fn(ListMsg) -> Message;
 
@@ -75,12 +75,8 @@ pub struct ListState {
     pub marked: Option<(String, Instant)>,
     /// The line being played.
     pub playing: Option<String>,
-    thumbs: HashMap<String, Picture>,
-    decoding: HashSet<String>,
-    /// The title being renamed (the header's or the recording's).
+    /// The title being renamed (the card's).
     pub title: Option<String>,
-    /// 詳細 is open under the finished session's header.
-    pub details: bool,
 }
 
 /// The key of the list's last item: the room under the rows (and the note while words are on
@@ -105,38 +101,32 @@ impl ListState {
             caption: None,
             marked: None,
             playing: None,
-            thumbs: HashMap::new(),
-            decoding: HashSet::new(),
             title: None,
-            details: false,
         }
     }
 
     /// A different session: its own rows and pictures.
     pub fn reset(&mut self) {
-        self.thumbs.clear();
-        self.decoding.clear();
         self.editing = None;
         self.caption = None;
         self.marked = None;
         self.playing = None;
         self.title = None;
-        self.details = false;
         self.keys.borrow_mut().clear();
         self.items.reset(0);
         self.forget();
     }
 
     /// The rows of a transcript, built again only when it changed.
-    pub fn rows(&self, tr: &Transcript, header: bool) -> Rc<Rows> {
-        let sig = rows::signature(tr, header);
+    pub fn rows(&self, tr: &Transcript) -> Rc<Rows> {
+        let sig = rows::signature(tr, false);
         let mut cache = self.cache.borrow_mut();
         if let Some((s, r)) = &*cache
             && *s == sig
         {
             return r.clone();
         }
-        let r = Rc::new(rows::build(tr, header));
+        let r = Rc::new(rows::build(tr, false));
         *cache = Some((sig, r.clone()));
         r
     }
@@ -166,7 +156,7 @@ impl ListState {
         self.items.set_follow_mode(FollowMode::Tail);
     }
 
-    /// Stops following (a finished session opens at its header).
+    /// Stops following (a finished session opens at its first line).
     pub fn stay(&self) {
         self.items.set_follow_mode(FollowMode::Normal);
         self.items.scroll_to(ListOffset::default());
@@ -191,13 +181,13 @@ impl ListState {
 
     /// While playing, the transcript keeps up with the sound, unless the reader has scrolled away
     /// from the line that was playing.
-    pub fn follow_playing(&mut self, tr: &Transcript, header: bool, key: Option<String>) -> Task {
+    pub fn follow_playing(&mut self, tr: &Transcript, key: Option<String>) -> Task {
         let prev = std::mem::replace(&mut self.playing, key.clone());
         let Some(key) = key else { return Task::none() };
         if prev.as_deref() == Some(key.as_str()) {
             return Task::none();
         }
-        let rows = self.rows(tr, header);
+        let rows = self.rows(tr);
         let index_of = |k: &str| rows.rows.iter().position(|r| r.key == k);
         let Some(index) = index_of(&key) else { return Task::none() };
         let was_shown = prev.as_deref().and_then(index_of).is_none_or(|i| self.shows(i));
@@ -210,17 +200,8 @@ impl ListState {
     }
 }
 
-/// A screenshot's size in the list: at most 220 px high and the width of the lines.
-fn image_size(s: &Screenshot, max_w: f32) -> (f32, f32) {
-    let (w, h) = (s.width.max(1) as f32, s.height.max(1) as f32);
-    let height = 220.0_f32.min(max_w * h / w);
-    (height * w / h, height)
-}
-
 #[derive(Debug, Clone)]
 pub enum ListMsg {
-    /// A row came into view.
-    Shown(String),
     JumpLatest,
     PlayFrom(u64),
     Seek(u64),
@@ -236,7 +217,6 @@ pub enum ListMsg {
     SaveCaption,
     DeleteShot(String),
     OpenImage(PathBuf),
-    Thumb(String, Option<Picture>),
     /// A line came back changed (edited or starred).
     Changed(Result<Segment, AppError>),
     /// An item was deleted, or its caption saved.
@@ -246,7 +226,6 @@ pub enum ListMsg {
     TitleInput(String),
     TitleSave,
     TitleSaved(String, Result<(), AppError>),
-    Details,
     Escape,
 }
 
@@ -272,51 +251,10 @@ fn failed(e: AppError) -> Message {
     Message::Failed(e, "saveFailed")
 }
 
-/// What a list's messages change: its state and its transcript. `header` says whether the rows
-/// start with the session's header.
-pub fn update(
-    core: &AppHandle,
-    list: &mut ListState,
-    tr: &mut Transcript,
-    msg: ListMsg,
-    wrap: Wrap,
-    header: bool,
-) -> Task {
+/// What a list's messages change: its state and its transcript.
+pub fn update(core: &AppHandle, list: &mut ListState, tr: &mut Transcript, msg: ListMsg, wrap: Wrap) -> Task {
     let Some(sid) = tr.session_id.clone() else { return Task::none() };
     match msg {
-        ListMsg::Shown(key) => {
-            // A saved screenshot is read from its file once it comes into view.
-            let shot = tr.items.iter().find_map(|i| match i {
-                TimelineItem::Screenshot(s) if s.id == key => Some(s.clone()),
-                _ => None,
-            });
-            match (shot, &tr.folder) {
-                (Some(s), Some(folder))
-                    if !tr.thumbs.contains_key(&s.id)
-                        && !list.thumbs.contains_key(&s.id)
-                        && list.decoding.insert(s.id.clone()) =>
-                {
-                    let path = crate::app::session_file(folder, &s.file);
-                    let id = s.id.clone();
-                    Task::future(async move {
-                        let handle = chidori_core::host::runtime()
-                            .spawn_blocking(move || decode_thumb(&path))
-                            .await
-                            .ok()
-                            .flatten();
-                        wrap(ListMsg::Thumb(id, handle))
-                    })
-                }
-                _ => Task::none(),
-            }
-        }
-        ListMsg::Thumb(id, handle) => {
-            list.decoding.remove(&id);
-            if let Some(h) = handle {
-                list.thumbs.insert(id, h);
-            }
-            Task::none()
-        }
         ListMsg::JumpLatest => {
             list.items.set_follow_mode(FollowMode::Tail);
             Task::none()
@@ -324,7 +262,7 @@ pub fn update(
         // Played by the screen, which owns the player.
         ListMsg::PlayFrom(_) => Task::none(),
         ListMsg::Seek(ms) => {
-            let rows = list.rows(tr, header);
+            let rows = list.rows(tr);
             let Some(index) = rows::seek_index(tr, &rows, ms) else { return Task::none() };
             list.marked = Some((rows.rows[index].key.clone(), Instant::now()));
             list.stay();
@@ -461,10 +399,6 @@ pub fn update(
             tr.title = Some(title);
             Task::none()
         }
-        ListMsg::Details => {
-            list.details = !list.details;
-            Task::none()
-        }
         ListMsg::Escape => {
             if list.editing.is_some() {
                 list.editing = None;
@@ -481,13 +415,6 @@ pub fn update(
 /// A row stays marked this long after the session's line pointed at it.
 pub const MARK_FOR: Duration = Duration::from_millis(1600);
 
-/// A saved screenshot, read and shrunk to what the list shows (2× for sharp screens).
-fn decode_thumb(path: &std::path::Path) -> Option<Picture> {
-    let img = ::image::open(path).ok()?.thumbnail(1520, 440).into_rgba8();
-    let (w, h) = img.dimensions();
-    Picture::from_rgba(w, h, img.into_raw())
-}
-
 /// Speech heard but not written yet, from the core's lag (FR-25), while recording.
 pub fn writing(app: &App) -> bool {
     matches!(app.rec.state, UiState::Recording | UiState::Paused)
@@ -498,14 +425,14 @@ pub fn writing(app: &App) -> bool {
 /// 「文字起こし中…」 with a spinner, so a slow PC shows that the words are on their way.
 pub fn writing_note(now: Instant) -> El {
     row()
-        .gap(px(6.0))
-        .child(spinner(12.0, now))
-        .child(line(t("transcribing"), tokens::CAPTION, p().ink_muted))
+        .gap(g(1.0))
+        .child(spinner(16.0, now))
+        .child(line(t("transcribing"), tokens::SMALL, p().muted))
         .into_any_element()
 }
 
 fn centered_note(content: El) -> gpui_kit::Div {
-    div().size_full().flex().items_center().justify_center().px(px(24.0)).child(content)
+    div().size_full().flex().items_center().justify_center().px(g(3.0)).child(content)
 }
 
 /// Which list a view shows: the screen's transcript and list state, found again from the app when
@@ -518,13 +445,9 @@ pub struct Ctx {
     pub select: Select,
     pub live: bool,
     pub editable: bool,
-    /// The finished session's header, as the first row.
-    pub header: Option<fn(&App) -> El>,
     /// Lines can be played from.
     pub playable: bool,
     pub wrap: Wrap,
-    /// How far the deck reaches over the bottom of the list.
-    pub under: f32,
 }
 
 /// The transcript as a list of the rows in view.
@@ -546,26 +469,19 @@ pub fn view(app: &App, c: Ctx, ui: &mut Ui) -> El {
                 .on_submit(wrap(ListMsg::SaveCaption)),
         );
     }
-    if let Some(draft) = &list.title {
-        ui.input(
-            Field::new(list.title_key.clone(), draft, move |v| wrap(ListMsg::TitleInput(v)))
-                .placeholder(t("newTitle"))
-                .on_submit(wrap(ListMsg::TitleSave)),
-        );
-    }
-    let rows = list.rows(tr, c.header.is_some());
+    let rows = list.rows(tr);
     let has_lines = rows.has_lines();
     let note = c.live && writing(app) && !rows.has_partial;
     if c.live && !has_lines {
         let body: El = if writing(app) {
             writing_note(app.now)
         } else {
-            line(t("waitingForSpeech"), tokens::CAPTION, p().ink_muted).into_any_element()
+            line(t("waitingForSpeech"), tokens::SMALL, p().muted).into_any_element()
         };
-        return centered_note(body).pb(px(c.under)).into_any_element();
+        return centered_note(body).into_any_element();
     }
-    if !has_lines && c.header.is_none() {
-        return centered_note(line(t("emptyTranscript"), tokens::CAPTION, p().ink_muted).into_any_element())
+    if !has_lines {
+        return centered_note(line(t("emptyTranscript"), tokens::SMALL, p().muted).into_any_element())
             .into_any_element();
     }
     let mut keys: Vec<String> = rows.rows.iter().map(|r| r.key.clone()).collect();
@@ -573,31 +489,22 @@ pub fn view(app: &App, c: Ctx, ui: &mut Ui) -> El {
     list.sync(keys, look_key(app, tr, list, c));
 
     let items = gpui_list(list.items.clone(), move |ix, _window, cx| {
-        let built = ui::read_app(cx, |app| build_row(app, c, ix, note));
-        match built {
-            Some((el, shown)) => {
-                if let Some(key) = shown {
-                    ui::send(wrap(ListMsg::Shown(key)), cx);
-                }
-                el
-            }
-            None => nothing(),
-        }
+        ui::read_app(cx, |app| build_row(app, c, ix, note)).unwrap_or_else(nothing)
     })
     .size_full();
     let mut area = div().relative().size_full().child(items);
     if c.live && !list.following() {
-        let sunk = p().surface_sunken;
+        let hover = p().hover_panel;
         let jump = floating(row())
-            .gap(px(6.0))
-            .px(px(14.0))
-            .py(px(6.0))
-            .rounded(px(tokens::RADIUS_MD))
-            .child(icon(Icon::ArrowDown, 13.0, p().ink))
-            .child(line(t("jumpLatest"), tokens::CAPTION, p().ink).medium());
-        let jump = clickable(Some(wrap(ListMsg::JumpLatest)), "jump").hover(move |s| s.bg(sunk)).child(jump);
-        area = area
-            .child(div().absolute().left_0().right_0().bottom(px(c.under + 16.0)).flex().justify_center().child(jump));
+            .gap(g(1.0))
+            .h(g(5.0))
+            .px(g(2.0))
+            .rounded(g(2.5))
+            .child(icon(Icon::ArrowDown, 16.0, p().ink))
+            .child(line(t("jumpLatest"), tokens::LABEL, p().ink).bold());
+        let jump =
+            clickable(Some(wrap(ListMsg::JumpLatest)), "jump").rounded(g(2.5)).hover(move |s| s.bg(hover)).child(jump);
+        area = area.child(div().absolute().left_0().right_0().bottom(g(2.0)).flex().justify_center().child(jump));
     }
     area.into_any_element()
 }
@@ -606,98 +513,93 @@ pub fn view(app: &App, c: Ctx, ui: &mut Ui) -> El {
 /// it changes.
 fn look_key(app: &App, tr: &Transcript, list: &ListState, c: Ctx) -> u64 {
     let mut h = std::collections::hash_map::DefaultHasher::new();
-    rows::signature(tr, c.header.is_some()).hash(&mut h);
+    rows::signature(tr, false).hash(&mut h);
     (c.live, c.editable, c.playable).hash(&mut h);
     crate::i18n::is_ja().hash(&mut h);
-    (list.thumbs.len(), tr.thumbs.len()).hash(&mut h);
     list.caption.as_ref().map(|c| &c.0).hash(&mut h);
     list.editing.as_ref().map(|e| &e.id).hash(&mut h);
-    (list.title.is_some(), list.details).hash(&mut h);
+    (list.width() as u32).hash(&mut h);
     app.projects_version.hash(&mut h);
     h.finish()
 }
 
-/// One row of a list, built when GPUI lays it out, and the key of a row that came into view and
-/// wants something loaded.
-fn build_row(app: &App, c: Ctx, ix: usize, note: bool) -> (El, Option<String>) {
+/// One row of a list, built when GPUI lays it out.
+fn build_row(app: &App, c: Ctx, ix: usize, note: bool) -> El {
     let (tr, list) = (c.select)(app);
-    let rows = list.rows(tr, c.header.is_some());
+    let rows = list.rows(tr);
     let Some(r) = rows.rows.get(ix) else {
-        // The footer: room under the last line for the deck, and the note.
-        let mut f = col().w_full().pb(px(20.0 + c.under));
+        // The footer: room under the last line, and the note.
+        let mut f = col().w_full().pb(g(2.0));
         if note {
-            f = f.child(div().pl(px(PAD_X)).pt(px(8.0)).h(px(WRITING_H)).child(writing_note(app.now)));
+            f = f.child(div().pl(px(PAD_X)).pt(g(1.0)).h(px(WRITING_H)).child(writing_note(app.now)));
         }
-        return (f.into_any_element(), None);
+        return f.into_any_element();
     };
-    let mut shown = None;
+    let ringed =
+        list.marked.as_ref().is_some_and(|(k, _)| *k == r.key) || list.playing.as_deref() == Some(r.key.as_str());
     let body: El = match r.kind {
-        RowKind::Header => {
-            let mut col = col().w_full().child(c.header.map_or_else(nothing, |h| h(app)));
-            if !rows.has_lines() {
-                col = col.child(div().w_full().flex().justify_center().py(px(40.0)).child(line(
-                    t("emptyTranscript"),
-                    tokens::CAPTION,
-                    p().ink_muted,
-                )));
-            }
-            col.into_any_element()
-        }
+        RowKind::Header => nothing(),
         RowKind::Item(i) => match &tr.items[i] {
             TimelineItem::Segment(s) if list.editing.as_ref().is_some_and(|e| e.id == s.id) => {
                 edit_row(tr, s, r.head, rows.two, list, c.wrap)
             }
-            TimelineItem::Screenshot(s) => {
-                if !tr.thumbs.contains_key(&s.id) && !list.thumbs.contains_key(&s.id) && !list.decoding.contains(&s.id)
-                {
-                    shown = Some(s.id.clone());
-                }
-                row_view(app, tr, list, r, rows.two, c.editable && !c.live, c.playable, c.wrap)
-            }
-            _ => row_view(app, tr, list, r, rows.two, c.editable && !c.live, c.playable, c.wrap),
+            _ => row_view(app, tr, list, r, rows.two, ringed, c),
         },
-        RowKind::Partial(_) => row_view(app, tr, list, r, rows.two, false, false, c.wrap),
+        RowKind::Partial(_) => {
+            row_view(app, tr, list, r, rows.two, false, Ctx { editable: false, playable: false, ..c })
+        }
     };
-    let highlighted =
-        list.marked.as_ref().is_some_and(|(k, _)| *k == r.key) || list.playing.as_deref() == Some(r.key.as_str());
-    let mut inner = div().w_full().max_w(px(MAX_W)).child(body);
-    if highlighted {
-        inner = inner.bg(p().surface_sunken);
-    }
-    (div().w_full().flex().justify_center().child(inner).into_any_element(), shown)
+    let inner = div().w_full().max_w(px(MAX_W)).child(body);
+    div().w_full().flex().justify_center().child(inner).into_any_element()
 }
 
-/// How far a fresh line has darkened into place, 0..1; `None` once it has settled.
-fn fresh_age(app: &App, tr: &Transcript, key: &str) -> Option<f32> {
-    let at = tr.fresh.get(key)?;
-    let t = app.now.saturating_duration_since(*at).as_secs_f32() / 0.2;
-    (t < 1.0).then_some(t.max(0.0))
-}
-
-/// A speaker's name in the colour of their side of the line: 相手 in the accent, 自分 ink.
+/// A speaker's name in their colour: 相手 coral, 自分 teal.
 pub fn speaker_color(source: SourceId) -> Color {
-    if source == SourceId::Mic { p().ink } else { p().accent }
+    if source == SourceId::Mic { p().me } else { p().them }
 }
 
 pub fn speaker_name(source: SourceId) -> String {
     t(if source == SourceId::Mic { "me" } else { "others" })
 }
 
-/// A turn's first line: the speaker's name (with both sides recorded), then the time.
-fn turn_head(source: SourceId, time: String, two: bool) -> El {
-    let mut r = row().gap(px(8.0));
-    if two {
-        r = r.child(line(speaker_name(source), tokens::CAPTION, speaker_color(source)).medium());
+/// Lines of 自分 sit on the right when both sides were recorded.
+fn on_right(source: SourceId, two: bool) -> bool {
+    two && source == SourceId::Mic
+}
+
+/// The line over a bubble: the speaker's name (with both sides recorded) and the time, and ★ on a
+/// starred line. 自分's reads the other way round, in line with its bubble on the right.
+fn meta(source: SourceId, time: String, two: bool, name: bool, star: bool) -> El {
+    let right = on_right(source, two);
+    let who = (two && name).then(|| line(speaker_name(source), tokens::META, speaker_color(source)).bold());
+    let when = line(time, tokens::META, p().meta);
+    let mut r = row().h(g(3.0)).gap(px(4.0));
+    if right {
+        if star {
+            r = r.child(line("★ ·", tokens::META, p().ink).bold());
+        }
+        r = r.child(when);
+        if let Some(w) = who {
+            r = r.child(w);
+        }
+    } else {
+        if let Some(w) = who {
+            r = r.child(w);
+        }
+        r = r.child(when);
+        if star {
+            r = r.child(line("· ★", tokens::META, p().ink).bold());
+        }
     }
-    r.child(line(time, tokens::CAPTION, p().ink_muted).mono()).into_any_element()
+    r.into_any_element()
 }
 
 /// A small action in a row's hover box.
 fn act(which: Icon, label: String, msg: Message, pressed: bool) -> El {
     let group = format!("act-{which:?}");
     let ink = p().ink;
-    let sunk = p().surface_sunken;
-    let mut glyph = icon(which, 13.0, if pressed { ink } else { p().ink_muted });
+    let hover = p().hover_panel;
+    let mut glyph = icon(which, 16.0, if pressed { ink } else { p().muted });
     if !pressed {
         glyph = glyph.group_hover(group.clone(), move |s| s.text_color(ink));
     }
@@ -706,217 +608,183 @@ fn act(which: Icon, label: String, msg: Message, pressed: bool) -> El {
         .flex()
         .items_center()
         .justify_center()
-        .size(px(24.0))
-        .rounded(px(tokens::RADIUS_SM))
-        .hover(move |s| s.bg(sunk))
+        .size(g(4.0))
+        .rounded(g(2.0))
+        .hover(move |s| s.bg(hover))
         .child(glyph);
     with_tip(b, label).into_any_element()
 }
 
-/// A row with actions shown over its top right while the pointer is on it.
-fn with_actions(body: El, items: Vec<El>, key: &str) -> El {
+/// A row with actions shown at its top, on the side away from its bubble, while the pointer is on it.
+fn with_actions(body: El, items: Vec<El>, key: &str, right: bool) -> El {
     let group: SharedString = format!("row-{key}").into();
-    let bar = row()
-        .gap(px(2.0))
-        .p(px(2.0))
-        .bg(p().surface)
-        .border_1()
-        .border_color(p().border)
-        .rounded(px(tokens::RADIUS_MD))
-        .children(items);
-    let overlay =
-        div().absolute().top(px(4.0)).right(px(8.0)).invisible().group_hover(group.clone(), |s| s.visible()).child(bar);
+    let bar = floating(row()).p(px(2.0)).children(items);
+    let overlay = div().absolute().top_0().invisible().group_hover(group.clone(), |s| s.visible()).child(bar);
+    let overlay = if right { overlay.left(px(PAD_X)) } else { overlay.right(px(PAD_X)) };
     div().id(ui::uid(("row", key))).group(group).relative().w_full().child(body).child(overlay).into_any_element()
 }
 
-#[allow(clippy::too_many_arguments)]
-fn row_view(
-    app: &App,
-    tr: &Transcript,
-    list: &ListState,
-    r: &Row,
-    two: bool,
-    editable: bool,
-    playable: bool,
-    wrap: Wrap,
-) -> El {
+fn row_view(app: &App, tr: &Transcript, list: &ListState, r: &Row, two: bool, ringed: bool, c: Ctx) -> El {
     match r.kind {
         RowKind::Header => nothing(),
         RowKind::Partial(source) => {
             let p_ = tr.partials.get(&source);
             let text = p_.map_or_else(String::new, |p| p.text.clone());
             let time = p_.and_then(|p| p.t_start_ms).map(|t| tr.clock(t)).unwrap_or_default();
-            let mut c = col().w_full().px(px(PAD_X)).pt(px(if r.head { 14.0 } else { 2.0 })).pb(px(2.0));
-            if r.head {
-                c = c.child(turn_head(source, time, two)).child(div().h(px(2.0)));
-            }
-            c.child(theme::t(text, tokens::BODY, p().ink_subtle)).into_any_element()
+            let b =
+                bubble(theme::t(text, tokens::BODY, p().faint).into_any_element(), source, two, list, Bubble::Hollow);
+            line_row(r.head.then(|| meta(source, time, two, true, false)), b, source, two)
         }
         RowKind::Item(i) => match &tr.items[i] {
-            TimelineItem::Segment(s) => segment_row(app, tr, s, r.head, two, editable, playable, wrap),
-            TimelineItem::Screenshot(s) => screenshot_row(tr, list, s, editable, wrap),
+            TimelineItem::Segment(s) => segment_row(app, tr, list, s, r.head, two, ringed, c),
+            TimelineItem::Screenshot(s) => screenshot_row(tr, list, s, c.editable && !c.live, c.wrap),
             TimelineItem::Marker(m) => marker_row(tr, m),
         },
     }
 }
 
-/// A line's text: bolder when important, with 編集済み after it when edited.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Bubble {
+    /// White.
+    Plain,
+    /// White with the ink ring: starred, or being played.
+    Ringed,
+    /// The words still coming: no fill, a `line` ring.
+    Hollow,
+}
+
+/// How wide a bubble may get: about three quarters of the list.
+fn bubble_w(list: &ListState) -> f32 {
+    ((list.width() - 2.0 * PAD_X) * 0.77).max(BUBBLE_W.min(list.width() - 2.0 * PAD_X))
+}
+
+/// A bubble around a line's words: 16 round, 4 at the top corner on the speaker's side.
+fn bubble(content: El, source: SourceId, two: bool, list: &ListState, kind: Bubble) -> El {
+    let right = on_right(source, two);
+    let p_ = p();
+    let ring = kind != Bubble::Plain;
+    // The ring draws inside the box, so the words keep their place.
+    let (py, px_) = if ring { (GRID - 2.0, 2.0 * GRID - 2.0) } else { (GRID, 2.0 * GRID) };
+    let mut b = div().max_w(px(bubble_w(list))).py(px(py)).px(px(px_)).rounded(px(R_ROW));
+    b = if right { b.rounded_tr(px(R_NOTCH)) } else { b.rounded_tl(px(R_NOTCH)) };
+    b = match kind {
+        Bubble::Plain => b.bg(p_.surface),
+        Bubble::Ringed => b.bg(p_.surface).border_2().border_color(p_.ink),
+        Bubble::Hollow => b.border_2().border_color(p_.line),
+    };
+    b.child(content).into_any_element()
+}
+
+/// A line's place in the list: its meta over its bubble, on its speaker's side.
+fn line_row(meta: Option<El>, bubble: El, source: SourceId, two: bool) -> El {
+    let right = on_right(source, two);
+    let mut c = col().w_full().px(px(PAD_X)).pt(g(1.0));
+    c = if right { c.items_end() } else { c.items_start() };
+    if let Some(m) = meta {
+        c = c.child(m);
+    }
+    c.child(bubble).into_any_element()
+}
+
+/// A line's words, and 編集済み under them when edited.
 fn line_text(s: &Segment, color: Color) -> El {
     let body = theme::t(s.text.clone(), tokens::BODY, color);
-    let body = if s.important { body.medium() } else { body };
     if !s.edited {
         return body.into_any_element();
     }
-    let tag = div()
-        .flex_none()
-        .px(px(4.0))
-        .border_1()
-        .border_color(p().border)
-        .rounded(px(3.0))
-        .text_size(px(tokens::CAPTION.size - 2.0))
-        .text_color(p().ink_muted)
-        .child(t("edited"));
-    div().flex().flex_wrap().items_end().gap(px(4.0)).child(body).child(tag).into_any_element()
+    col().child(body).child(line(t("edited"), tokens::SMALL, p().muted)).into_any_element()
 }
 
 #[allow(clippy::too_many_arguments)]
 fn segment_row(
     app: &App,
     tr: &Transcript,
+    list: &ListState,
     s: &Segment,
     head: bool,
     two: bool,
-    editable: bool,
-    playable: bool,
-    wrap: Wrap,
+    ringed: bool,
+    c: Ctx,
 ) -> El {
-    let ink = match fresh_age(app, tr, &s.id) {
-        Some(age) => mix(p().ink, p().ink_subtle, age),
+    let fresh = tr.fresh.contains_key(&s.id);
+    // A fresh line darkens into place.
+    let ink = match tr.fresh.get(&s.id) {
+        Some(at) => {
+            let t = (app.now.saturating_duration_since(*at).as_secs_f32() / 0.2).clamp(0.0, 1.0);
+            mix(p().ink, p().faint, t)
+        }
         None => p().ink,
     };
-    let mut c = col().relative().w_full().px(px(PAD_X)).pt(px(if head { 14.0 } else { 2.0 })).pb(px(2.0));
-    if head {
-        c = c.child(turn_head(s.source, tr.clock(s.t_start_ms), two)).child(div().h(px(2.0)));
-    }
-    c = c.child(line_text(s, ink));
-    // An important line: an ink stroke in the margin, 11 px left of the text, and bolder text.
-    if s.important {
-        let top = if head { 14.0 + tokens::CAPTION.line_height + 2.0 } else { 2.0 };
-        c = c.child(
-            div()
-                .absolute()
-                .left(px(PAD_X - 11.0))
-                .top(px(top + 6.0))
-                .bottom(px(8.0))
-                .w(px(3.0))
-                .rounded(px(1.5))
-                .bg(p().ink),
-        );
-    }
-    let body = c.into_any_element();
+    let kind = if s.important || ringed { Bubble::Ringed } else { Bubble::Plain };
+    let b = bubble(line_text(s, ink), s.source, two, list, kind);
+    // A new line comes in from below into its place.
+    let look = Look { color: p().surface, side: p().side, radius: R_ROW };
+    let from = fresh.then_some(motion::From { dx: 0.0, dy: 2.0 * GRID });
+    let b = motion::enter(format!("line-{}", s.id), b, from, false, look);
+    let meta = (head || s.important).then(|| meta(s.source, tr.clock(s.t_start_ms), two, head, s.important));
+    let body = line_row(meta, b, s.source, two);
     if tr.session_id.is_none() {
         return body;
     }
+    let wrap = c.wrap;
     let mut items = Vec::new();
-    if playable {
+    if c.playable {
         items.push(act(Icon::Play, t("playFromHere"), wrap(ListMsg::PlayFrom(s.t_start_ms)), false));
     }
     let mark = if s.important { t("unmarkImportant") } else { t("markImportant") };
     items.push(act(Icon::Star, mark, wrap(ListMsg::Star(s.id.clone(), !s.important)), s.important));
-    if editable {
+    if c.editable && !c.live {
         items.push(act(Icon::Pencil, t("editLine"), wrap(ListMsg::Edit(s.id.clone())), false));
         items.push(act(Icon::Trash, t("deleteLine"), wrap(ListMsg::DeleteLine(s.id.clone())), false));
     }
-    with_actions(body, items, &s.id)
+    with_actions(body, items, &s.id, on_right(s.source, two))
 }
 
-/// A line being edited, in the kamon's frame: the one container being worked in.
+/// A line being edited: a white panel with its words in a box, and 取消 and 保存 under it.
 fn edit_row(tr: &Transcript, s: &Segment, head: bool, two: bool, list: &ListState, wrap: Wrap) -> El {
-    let mut c = col().w_full().px(px(PAD_X)).pt(px(if head { 14.0 } else { 2.0 })).pb(px(2.0));
-    if head {
-        c = c.child(turn_head(s.source, tr.clock(s.t_start_ms), two)).child(div().h(px(2.0)));
-    }
     let editor = ui::built_input(&list.editor_key).unwrap_or_else(nothing);
     let buttons = row()
-        .gap(px(6.0))
+        .gap(g(1.0))
         .child(fill())
-        .child(btn_with(
-            row().gap(px(6.0)).child(icon(Icon::X, 13.0, p().ink)).child(theme::plain(t("cancel"), tokens::LABEL)),
-            Variant::Ghost,
-            Size::Sm,
-            Some(wrap(ListMsg::CancelEdit)),
-        ))
-        .child(btn_with(
-            row()
-                .gap(px(6.0))
-                .child(icon(Icon::Check, 13.0, p().on_accent))
-                .child(theme::plain(t("save"), tokens::LABEL)),
-            Variant::Primary,
-            Size::Sm,
-            Some(wrap(ListMsg::SaveEdit)),
-        ));
-    c.child(
-        col()
-            .gap(px(6.0))
-            .py(px(4.0))
-            .child(frame(div().p(px(2.0)).child(editor), p().surface_raised, tokens::RADIUS_LG))
-            .child(buttons),
-    )
-    .into_any_element()
+        .child(btn(t("cancel"), Variant::Ghost, Size::Sm, Some(wrap(ListMsg::CancelEdit))))
+        .child(btn(t("save"), Variant::Primary, Size::Sm, Some(wrap(ListMsg::SaveEdit))));
+    let panel = col().w_full().gap(g(1.0)).p(g(1.0)).rounded(px(R_ROW)).bg(p().surface).child(editor).child(buttons);
+    let meta = head.then(|| meta(s.source, tr.clock(s.t_start_ms), two, true, s.important));
+    let mut c = col().w_full().px(px(PAD_X)).pt(g(1.0));
+    if let Some(m) = meta {
+        c = c.child(m);
+    }
+    c.child(panel).into_any_element()
 }
 
+/// A screenshot: one line in the middle of the flow, where it was taken; clicking opens it.
 fn screenshot_row(tr: &Transcript, list: &ListState, s: &Screenshot, editable: bool, wrap: Wrap) -> El {
-    let time = tr.clock(s.t_ms);
-    let head = row()
-        .gap(px(6.0))
-        .child(icon(Icon::Camera, 12.0, p().ink_muted))
-        .child(line(time, tokens::CAPTION, p().ink_muted).mono());
     let path = tr.folder.as_ref().map(|f| crate::app::session_file(f, &s.file));
-    let handle = tr.thumbs.get(&s.id).or_else(|| list.thumbs.get(&s.id)).cloned();
-    let (w, h) = image_size(s, (list.width() - 2.0 * PAD_X).max(40.0));
-    let picture: El = match handle {
-        Some(handle) => {
-            let strong = p().border_strong;
-            let b = clickable(path.map(|p| wrap(ListMsg::OpenImage(p))), ("shot", &s.id))
-                .flex_none()
-                .p(px(1.0))
-                .bg(p().surface_sunken)
-                .border_1()
-                .border_color(p().border)
-                .rounded(px(tokens::RADIUS_SM))
-                .hover(move |st| st.border_color(strong))
-                .child(img(handle.0).w(px(w)).h(px(h)));
-            with_tip(b, t("openImage")).into_any_element()
-        }
-        // Not read yet, or no file: an empty frame of a fixed size.
-        None => div()
-            .flex()
-            .flex_none()
-            .items_center()
-            .justify_center()
-            .w(px(192.0))
-            .h(px(80.0))
-            .border_1()
-            .border_color(p().border)
-            .rounded(px(tokens::RADIUS_SM))
-            .child(icon(Icon::Camera, 18.0, p().ink_muted))
-            .into_any_element(),
-    };
-    let mut c =
-        col().w_full().px(px(PAD_X)).pt(px(14.0)).pb(px(4.0)).child(head).child(div().h(px(4.0))).child(picture);
+    let mut words = format!("{} {}", tr.clock(s.t_ms), t("screenshotShort"));
     let open = list.caption.as_ref().filter(|(id, _)| *id == s.id);
     if let (Some(caption), None) = (&s.caption, open) {
-        c = c.child(theme::t(caption.clone(), tokens::CAPTION, p().ink_muted).pt(px(6.0)));
+        words = format!("{words} · {caption}");
     }
+    let ink = p().ink;
+    let content = row()
+        .gap(g(1.0))
+        .h(g(3.0))
+        .min_w_0()
+        .child(icon(Icon::Camera, 16.0, p().muted).group_hover("shot", move |st| st.text_color(ink)))
+        .child(div().min_w_0().overflow_hidden().child(line(words, tokens::SMALL, p().muted)));
+    let marker = clickable(path.map(|p| wrap(ListMsg::OpenImage(p))), ("shot", &s.id))
+        .group("shot")
+        .flex()
+        .min_w_0()
+        .text_color(p().muted)
+        .hover(move |st| st.text_color(ink))
+        .child(content);
+    let marker = with_tip(marker, t("openImage"));
+    let mut c = col().w_full().items_center().px(px(PAD_X)).pt(g(1.0)).child(marker);
     if open.is_some() {
         let input = ui::built_input(&list.caption_key).unwrap_or_else(nothing);
-        let save = btn_with(
-            icon(Icon::Check, 13.0, p().on_accent),
-            Variant::Primary,
-            Size::Sm,
-            Some(wrap(ListMsg::SaveCaption)),
-        );
-        c = c.child(row().gap(px(6.0)).pt(px(6.0)).child(div().flex_1().child(input)).child(save));
+        let save = btn(t("save"), Variant::Primary, Size::Sm, Some(wrap(ListMsg::SaveCaption)));
+        c = c.child(row().w_full().gap(g(1.0)).pt(g(1.0)).child(div().flex_1().child(input)).child(save));
     }
     let body = c.into_any_element();
     if !editable {
@@ -929,11 +797,12 @@ fn screenshot_row(tr: &Transcript, list: &ListState, s: &Screenshot, editable: b
             act(Icon::Trash, t("deleteScreenshot"), wrap(ListMsg::DeleteShot(s.id.clone())), false),
         ],
         &s.id,
+        false,
     )
 }
 
-/// A marker as a rule with what happened. A pause or a gap had no sound, so its line stays flat; a
-/// cut starts a part, so its line is darker and it stands further from the part before.
+/// A marker, small in the middle of the flow with what happened. A cut starts a part, so it is in
+/// ink and stands further from the part before.
 fn marker_row(tr: &Transcript, m: &Marker) -> El {
     let detail = m.detail.clone().unwrap_or_else(|| "?".into());
     let (glyph, label) = match m.kind {
@@ -953,86 +822,70 @@ fn marker_row(tr: &Transcript, m: &Marker) -> El {
         _ => String::new(),
     };
     let cut = m.kind == MarkerKind::Cut;
-    let tone = if cut { p().ink } else { p().ink_muted };
-    let mut label_row = row()
-        .flex_none()
-        .gap(px(6.0))
-        .child(icon(glyph, 11.0, tone))
-        .child(line(label, tokens::CAPTION, tone).medium());
+    let tone = if cut { p().ink } else { p().muted };
+    let text = line(label, tokens::SMALL, tone);
+    let mut label_row = row().flex_none().h(g(3.0)).gap(g(1.0)).child(icon(glyph, 16.0, tone)).child(if cut {
+        text.bold()
+    } else {
+        text
+    });
     if m.kind != MarkerKind::Unprocessed {
-        label_row = label_row.child(line(format!("{day}{}", tr.clock(m.t_ms)), tokens::CAPTION, tone).mono());
+        label_row = label_row.child(line(format!("{day}{}", tr.clock(m.t_ms)), tokens::SMALL, tone));
     }
-    let rule = || div().flex_1().h(px(1.0)).bg(if cut { p().border_strong } else { p().border });
-    let (top, bottom) = if cut { (24.0, 8.0) } else { (12.0, 12.0) };
-    row()
-        .w_full()
-        .gap(px(12.0))
-        .px(px(PAD_X))
-        .pt(px(top))
-        .pb(px(bottom))
-        .child(rule())
-        .child(label_row)
-        .child(rule())
-        .into_any_element()
+    let rule = || div().flex_1().h(px(1.0)).bg(p().line);
+    let mut r = row().w_full().gap(g(2.0)).px(px(PAD_X)).pt(g(if cut { 3.0 } else { 1.0 }));
+    if cut {
+        r = r.child(rule()).child(label_row).child(rule());
+    } else {
+        r = r.justify_center().child(label_row);
+    }
+    r.into_any_element()
 }
 
-/// The compact window: the last two lines, the newest words in view.
+/// The compact window's strip: the latest line, cut at its start so the newest words show.
 pub fn tail(app: &App, tr: &Transcript, list: &ListState) -> El {
-    let rows = list.rows(tr, false);
+    let rows = list.rows(tr);
     let shown = rows::tail(tr, &rows);
-    if shown.is_empty() {
+    let Some(last) = shown.last() else {
         let body = if writing(app) {
             writing_note(app.now)
         } else {
-            line(t("waitingForSpeech"), tokens::CAPTION, p().ink_muted).into_any_element()
+            line(t("waitingForSpeech"), tokens::SMALL, p().muted).into_any_element()
         };
-        return div().px(px(4.0)).child(body).into_any_element();
-    }
-    // The compact window's width is fixed; what fits beside the name is about this many ems.
-    let avail = crate::app::COMPACT.width - 2.0 * 12.0 - 8.0;
-    let label = |source: SourceId| -> Option<El> {
-        rows.two.then(|| line(speaker_name(source), tokens::CAPTION, speaker_color(source)).medium().into_any_element())
+        return body;
     };
-    let lines = shown.iter().filter_map(|r| -> Option<El> {
-        match r.kind {
-            RowKind::Partial(s) => {
-                let text = tr.partials.get(&s).map_or("", |p| p.text.as_str());
-                Some(tail_line(label(s), None, text, p().ink_subtle, false, avail))
-            }
-            RowKind::Item(i) => match &tr.items[i] {
-                TimelineItem::Screenshot(_) => Some(
-                    row()
-                        .gap(px(6.0))
-                        .h(px(24.0))
-                        .child(icon(Icon::Camera, 12.0, p().ink_muted))
-                        .child(line(t("screenshot"), tokens::CAPTION, p().ink_muted))
-                        .into_any_element(),
-                ),
-                TimelineItem::Segment(s) => {
-                    let star = s.important.then(|| icon(Icon::Star, 11.0, p().ink).into_any_element());
-                    Some(tail_line(label(s.source), star, &s.text, p().ink, s.important, avail))
-                }
-                TimelineItem::Marker(_) => None,
-            },
-            RowKind::Header => None,
+    // The compact window's width is fixed; what fits in the strip is about this many ems.
+    let avail = crate::app::COMPACT.width - 2.0 * GRID - 4.0 * GRID;
+    let label = |source: SourceId| -> Option<El> {
+        rows.two.then(|| line(speaker_name(source), tokens::META, speaker_color(source)).bold().into_any_element())
+    };
+    match last.kind {
+        RowKind::Partial(s) => {
+            let text = tr.partials.get(&s).map_or("", |p| p.text.as_str());
+            tail_line(label(s), text, p().faint, avail)
         }
-    });
-    col().px(px(4.0)).children(lines).into_any_element()
+        RowKind::Item(i) => match &tr.items[i] {
+            TimelineItem::Screenshot(s) => row()
+                .gap(g(1.0))
+                .child(icon(Icon::Camera, 16.0, p().muted))
+                .child(line(format!("{} {}", tr.clock(s.t_ms), t("screenshotShort")), tokens::SMALL, p().muted))
+                .into_any_element(),
+            TimelineItem::Segment(s) => tail_line(label(s.source), &s.text, p().ink, avail),
+            TimelineItem::Marker(_) => nothing(),
+        },
+        RowKind::Header => nothing(),
+    }
 }
 
 /// One line of the tail, cut at its start so the newest words stay visible.
-fn tail_line(label: Option<El>, star: Option<El>, text: &str, color: Color, important: bool, avail: f32) -> El {
-    let mut r = row().gap(px(8.0)).h(px(24.0));
+fn tail_line(label: Option<El>, text: &str, color: Color, avail: f32) -> El {
+    let mut r = row().w_full().gap(g(1.0));
     let mut room = avail;
     if let Some(l) = label {
-        r = r.child(l);
-        room -= tokens::CAPTION.size * 2.0 + 8.0;
+        r = r.child(div().flex_none().child(l));
+        room -= tokens::META.size * 2.0 + GRID;
     }
-    if let Some(s) = star {
-        r = r.child(s);
-        room -= 19.0;
-    }
-    let size = tokens::BODY_SMALL.size;
+    let size = tokens::BODY.size;
     let fits = |s: &str| s.chars().map(|c| if c.is_ascii() { size * 0.55 } else { size }).sum::<f32>() <= room;
     let shown = if fits(text) {
         text.to_string()
@@ -1044,7 +897,5 @@ fn tail_line(label: Option<El>, star: Option<El>, text: &str, color: Color, impo
         }
         format!("…{}", chars[from..].iter().collect::<String>())
     };
-    let text = line(shown, tokens::BODY_SMALL, color).text_right();
-    let text = if important { text.medium() } else { text };
-    r.child(div().flex_1().min_w_0().overflow_hidden().child(text)).into_any_element()
+    r.child(div().flex_1().min_w_0().overflow_hidden().child(line(shown, tokens::BODY, color))).into_any_element()
 }

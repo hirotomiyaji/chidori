@@ -156,6 +156,7 @@ pub fn begin_frame() {
     let seen = SEEN.with(|s| std::mem::take(&mut *s.borrow_mut()));
     INPUTS.with(|i| i.borrow_mut().retain(|k, _| seen.contains(k)));
     RENDERED.with(|r| r.set(r.get() + 1));
+    crate::motion::begin_frame();
 }
 
 /// An element ID from something that names it (its message, its label), stable from frame to
@@ -376,8 +377,10 @@ impl Ui<'_> {
 
 fn element(state: &Boxed, search: bool) -> AnyElement {
     match state {
+        // A search box sits in a white pill of its own; the box itself draws nothing around it.
         Boxed::Line(st) if search => Input::new(st)
-            .prefix(crate::icons::icon(crate::icons::Icon::Search, 15.0, crate::theme::p().ink_muted))
+            .appearance(false)
+            .prefix(crate::icons::icon(crate::icons::Icon::Search, 16.0, crate::theme::p().muted))
             .cleanable(true)
             .into_any_element(),
         Boxed::Line(st) => Input::new(st).into_any_element(),

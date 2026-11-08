@@ -138,22 +138,27 @@ items (section 19).
 ## 5. UI and UX
 
 One small window: expanded (420 × 640, resizable) for the transcript, History and Settings, and
-what it opens in until you shrink it; compact (380 × 170) for sitting beside a call. The look is the kamon brand (`@yusai/kamon-react`): a
-warm grey ground, ink, and Chidori's one colour, 朱, for what you can act on, what is selected and
-the voice you hear. `docs/DECISIONS.md` → UI explains how the app applies it and is the reference
-for UI changes.
+what it opens in until you shrink it; compact (380 × 170) for sitting beside a call. The look is
+Chidori's own palette on the Jello brand (the `jello-brand` repository): greyscale chrome, colour
+only for who is speaking (相手 coral, 自分 teal) and that it is recording (one red dot), plain
+rounded rects on an 8 px grid with no shadows or glows, and one spring ("jello") for everything
+that moves. `docs/DECISIONS.md` → UI explains how the app applies it and is the reference for UI
+changes.
 
-- **Places.** Expanded: 録音 · 履歴 · 設定 in the title bar. The recording place has three phases:
-  the start screen (開始, the source picker), the recording (a header that stays
-  in place with the title and the source, the transcript, the live line) and the finished
-  session (header, transcript, the session's line, copy and export). The recording's title
-  renames on a click; its source is a dropdown, where a pick switches the source (FR-17). The
-  compact window has no room for the header: there the title bar's 録音中 opens a native menu.
+- **Places.** Expanded: 録音 · 履歴 · 設定 as tabs in the title bar, the active one on a white
+  pill. The recording place has three phases: the start screen (相手 and 自分 as two white
+  panels, then a round 開始 with its hotkey and ファイルから文字起こし), the recording (an ink
+  card with ON AIR, the title, the source, the timer and the live wave; the transcript as white
+  bubbles; a bottom bar with the camera, star, cut, pause and 停止) and the finished session (the
+  card turns white with the date, length, source, project, a play button and the session's wave;
+  the bar holds コピー, 書き出し and ⋯). The card's title renames on a click; its source opens a
+  menu that switches the source (FR-17). The compact window has three rows: the title and
+  source, the latest line, and the dot, timer and controls.
 - **Rare actions** sit in native popup menus, so they fit the compact window: a session's ⋯
   (続きを録音, フォルダを開く, 削除, the same in History's rows) and コピー ▾ (Agent用, Markdown).
 - **Errors** are a banner at the top with one action, e.g. 「マイクへのアクセスがオフです [設定を開く]」
-  opening `ms-settings:privacy-microphone`. Errors are on the brand's brick tint and warnings on
-  its ochre, always with an icon and words, since 朱 sits close to both.
+  opening `ms-settings:privacy-microphone`. An error is an ink banner with a coral icon, a
+  warning a white one with a grey icon, always with words, so colour alone never carries one.
 - **Screenshot confirmation** is a toast; with the window hidden, a silent Windows notification.
 - **Light and dark** follow Windows. Every icon button names itself in a tooltip. Screen readers
   and keyboard navigation are not supported yet (DECISIONS → UI).
@@ -166,7 +171,7 @@ for UI changes.
 leaving `recording`; a source that fails shows an error banner while the others carry on; a
 full disk stops the recording and saves what exists.
 
-**Tray.** The app icon in ink when idle, paused or finishing, and in its 朱 while recording.
+**Tray.** The app icon in ink when idle, paused or finishing, and in its 朱 while recording (the icon is unchanged from the kamon kit until Jello has an icon tool).
 Left-click shows or hides the window.
 
 **Hotkeys** are off until set in 設定 › ショートカット. When idle, the start hotkey starts with the

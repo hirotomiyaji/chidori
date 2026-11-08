@@ -1,7 +1,7 @@
 //! Dialogs over everything: recovery at launch (flow D), quitting while recording (FR-93),
 //! 書き出し, renaming a row (FR-63), moving sessions to the Recycle Bin (FR-62), and a project's
-//! name and colour (FR-64). Each is a sheet in the kamon's frame with its main action on top; while
-//! one is open it is the view's one frame and one primary.
+//! name and colour (FR-64). Each is a white sheet with its main action on top; while one is open it
+//! holds the view's one primary.
 
 use chidori_core::error::AppError;
 use chidori_core::events::UiState;
@@ -16,7 +16,7 @@ use crate::i18n::{t, tf};
 use crate::icons::{Icon, icon};
 use crate::model::format::{date_time_of, hms};
 use crate::task::{self, Task};
-use crate::theme::{self, Ink, PROJECT_COLORS, line, p, project_color, tokens};
+use crate::theme::{self, Ink, PROJECT_COLORS, R_PANEL, R_ROW, g, line, p, project_color, tokens};
 use crate::ui::{self, El, Field, KeyPress, Ui, clickable};
 use crate::widgets::{self, Variant, col, dialog, dialog_button, row, with_tip};
 
@@ -433,19 +433,18 @@ fn color_key(c: &str) -> String {
     }
 }
 
-/// A project's colour as a small rounded square (the dot is the app's only circle); hollow for none.
+/// A project's colour as a round dot; a hollow ring for none.
 pub fn project_mark(color: Option<&str>, size: f32) -> El {
-    let radius = if size >= 16.0 { 4.0 } else { 3.0 };
-    let d = div().flex_none().size(px(size)).rounded(px(radius));
+    let d = div().flex_none().size(px(size)).rounded(px(size / 2.0));
     match color.map(project_color) {
         Some(c) => d.bg(c),
-        None => d.border(px(1.5)).border_color(p().border_strong),
+        None => d.border_2().border_color(p().line),
     }
     .into_any_element()
 }
 
 fn body_text(s: String) -> El {
-    theme::t(s, tokens::BODY_SMALL, p().ink).into_any_element()
+    theme::t(s, tokens::BODY, p().ink).into_any_element()
 }
 
 /// The open dialog over everything, or none.
@@ -502,7 +501,7 @@ pub fn view(app: &App, ui: &mut Ui) -> Option<El> {
                     .placeholder(t("projectName"))
                     .on_submit(msg(Msg::SaveProject)),
             );
-            let body = col().w_full().gap(px(tokens::SPACE_3)).child(field).child(color_choice(&f.color));
+            let body = col().w_full().gap(g(2.0)).child(field).child(color_choice(&f.color));
             let (title, save) =
                 if f.editing.is_some() { ("editProject", "save") } else { ("newProject", "createProject") };
             dialog(
@@ -533,11 +532,11 @@ fn recovery(app: &App) -> Option<El> {
         .w_full()
         .gap(px(2.0))
         .py(px(10.0))
-        .px(px(tokens::SPACE_3))
-        .bg(p().surface_sunken)
-        .rounded(px(tokens::RADIUS_LG))
+        .px(g(2.0))
+        .bg(p().hover_panel)
+        .rounded(px(R_PANEL))
         .child(line(s.title.clone(), tokens::LABEL, p().ink))
-        .child(line(meta, tokens::CAPTION, p().ink_muted));
+        .child(line(meta, tokens::SMALL, p().muted));
     Some(dialog(
         t("recoverTitle"),
         Some(card.into_any_element()),
@@ -553,8 +552,8 @@ fn format_row(app: &App, kind: ExportKind, glyph: Icon, key: &str, busy: Option<
     let idle = busy.is_none();
     let mut content = row()
         .w_full()
-        .gap(px(tokens::SPACE_3))
-        .child(icon(glyph, 18.0, p().ink_muted))
+        .gap(g(2.0))
+        .child(icon(glyph, 18.0, p().muted))
         .child(line(t(key), tokens::LABEL, p().ink).flex_1().min_w_0());
     if busy == Some(kind) {
         content = content.child(widgets::spinner(16.0, app.now));
@@ -563,8 +562,8 @@ fn format_row(app: &App, kind: ExportKind, glyph: Icon, key: &str, busy: Option<
         let zip = app.dialogs.zip;
         let toggle = idle.then(|| msg(Msg::Zip(!zip)));
         let label = row()
-            .gap(px(tokens::SPACE_2))
-            .child(line("ZIP", tokens::CAPTION, p().ink_muted).medium())
+            .gap(g(1.0))
+            .child(line("ZIP", tokens::SMALL, p().muted).bold())
             .child(widgets::switch(zip, toggle.clone()));
         content = content.child(with_tip(widgets::bare(label, toggle, false), t("zipToggle")));
     }
@@ -574,15 +573,15 @@ fn format_row(app: &App, kind: ExportKind, glyph: Icon, key: &str, busy: Option<
         .items_center()
         .w_full()
         .h(px(46.0))
-        .px(px(tokens::SPACE_3))
-        .bg(pal.surface_raised)
+        .px(g(2.0))
+        .bg(pal.surface)
         .border_1()
-        .border_color(pal.border)
-        .rounded(px(tokens::RADIUS_LG))
+        .border_color(pal.line)
+        .rounded(px(R_PANEL))
         .text_color(pal.ink)
         .child(content);
     if idle {
-        let (sunk, strong) = (pal.surface_sunken, pal.border_strong);
+        let (sunk, strong) = (pal.hover_panel, pal.line);
         b = b.hover(move |s| s.bg(sunk).border_color(strong));
     }
     b.into_any_element()
@@ -593,14 +592,14 @@ fn color_choice(chosen: &str) -> El {
     let mut r = row().gap(px(6.0));
     for c in PROJECT_COLORS {
         let on = c == chosen;
-        let strong = p().border_strong;
+        let strong = p().line;
         let mut b = clickable(Some(msg(Msg::ProjectColor(c))), ("color", c))
             .flex()
             .items_center()
             .justify_center()
             .size(px(28.0))
             .border_1()
-            .rounded(px(tokens::RADIUS_MD))
+            .rounded(px(R_ROW))
             .border_color(if on { p().ink } else { theme::Color::TRANSPARENT })
             .child(project_mark(Some(c), 16.0));
         if !on {

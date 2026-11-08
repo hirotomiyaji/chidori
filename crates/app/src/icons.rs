@@ -1,18 +1,14 @@
 //! The UI's icons: Lucide's, as the React UI drew them (`brand/icons/`, ISC licence), tinted at draw
-//! time, and Chidori's kamon.
+//! time.
 
 use std::borrow::Cow;
-use std::sync::{Arc, LazyLock};
 
-use gpui_kit::{
-    AssetSource, Image, ImageFormat, IntoElement, Radians, SharedString, Styled, Svg, Transformation, img, px, svg,
-};
+use gpui_kit::{AssetSource, Radians, SharedString, Styled, Svg, Transformation, px, svg};
 
 use crate::theme::Color;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum Icon {
-    AppWindow,
     ArrowDown,
     ArrowLeft,
     ArrowRightLeft,
@@ -41,15 +37,14 @@ pub enum Icon {
     Mic,
     Minimize,
     Minus,
-    MonitorSpeaker,
     Pause,
     Pencil,
     Pin,
     Play,
+    Plus,
     RefreshCw,
     Scissors,
     Search,
-    Settings,
     ShieldCheck,
     Star,
     StepForward,
@@ -65,8 +60,7 @@ macro_rules! files {
 }
 
 /// Each icon's file name and drawing, in the order of `Icon`.
-static FILES: [(&str, &[u8]); 44] = files!(
-    "app-window",
+static FILES: [(&str, &[u8]); 42] = files!(
     "arrow-down",
     "arrow-left",
     "arrow-right-left",
@@ -95,15 +89,14 @@ static FILES: [(&str, &[u8]); 44] = files!(
     "mic",
     "minimize-2",
     "minus",
-    "monitor-speaker",
     "pause",
     "pencil",
     "pin",
     "play",
+    "plus",
     "refresh-cw",
     "scissors",
     "search",
-    "settings",
     "shield-check",
     "star",
     "step-forward",
@@ -142,27 +135,4 @@ pub fn icon(which: Icon, size: f32, color: Color) -> Svg {
 /// An icon turned by `turn` (0..1 of a full turn).
 pub fn turned(which: Icon, size: f32, color: Color, turn: f32) -> Svg {
     icon(which, size, color).with_transformation(Transformation::rotate(Radians(turn * std::f32::consts::TAU)))
-}
-
-macro_rules! logo_image {
-    ($file:literal) => {
-        LazyLock::new(|| Arc::new(Image::from_bytes(ImageFormat::Svg, include_bytes!($file).to_vec())))
-    };
-}
-
-static LOGO_SMALL: LazyLock<Arc<Image>> = logo_image!("../brand/logo/chidori-small.svg");
-static LOGO_SMALL_DARK: LazyLock<Arc<Image>> = logo_image!("../brand/logo/chidori-small-on-dark.svg");
-static LOGO: LazyLock<Arc<Image>> = logo_image!("../brand/logo/chidori.svg");
-static LOGO_DARK: LazyLock<Arc<Image>> = logo_image!("../brand/logo/chidori-on-dark.svg");
-
-/// Chidori's kamon, in its own colours: the small drawing below 32 px, the dark one in dark mode.
-pub fn logo(size: f32) -> impl IntoElement {
-    let dark = crate::theme::is_dark();
-    let image = match (size < 32.0, dark) {
-        (true, false) => &*LOGO_SMALL,
-        (true, true) => &*LOGO_SMALL_DARK,
-        (false, false) => &*LOGO,
-        (false, true) => &*LOGO_DARK,
-    };
-    img(image.clone()).flex_none().size(px(size))
 }

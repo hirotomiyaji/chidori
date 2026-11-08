@@ -13,13 +13,14 @@ WASAPI capture.
 - `docs/DECISIONS.md` holds every choice the spec leaves open and every deviation from it. Where
   the spec is silent, pick the simplest option that keeps the UI one-tap simple and add a line
   there. When you change something the spec defines, update the spec section too.
-- The look is the kamon brand (the `kamon-brand` repository): a warm grey ground, ink, and
-  Chidori's one colour, 朱. For any UI work, use the brand-ui skill: it has the kamon brand rules.
-  Other agents read `.claude/skills/brand-ui/SKILL.md` (copied by `brand-sync` on `pnpm install`,
-  the one use of Node here; `pnpm brand` copies the kit's tokens, logos and icon into the app). The skill speaks of the React kit; in this app the same rules are applied in
-  Rust: the tokens, logos and fonts are vendored in `crates/app/brand/`, `build.rs` turns
-  `tokens.json` into constants, and `crates/app/src/widgets.rs` holds the kit's components. Read
-  `docs/DECISIONS.md` → UI for how the app applies it.
+- The look is Chidori's own palette on the Jello brand (the `jello-brand` repository,
+  `plugin/skills/brand-ui/SKILL.md`): greyscale chrome, colour only for who is speaking (相手
+  coral, 自分 teal) and that it is recording (one red dot), plain rounded rects on the 8 px grid
+  (`theme::GRID`, `g(n)`), and no shadows, glows or gradients. Everything that moves uses the one
+  jello port in `crates/app/src/jello.rs` (checked against the brand's golden moves in
+  `crates/app/brand/jello-golden/`), drawn by `crates/app/src/motion.rs`. The palette and type
+  are in `crates/app/src/theme.rs`, the fonts in `crates/app/brand/fonts/`, the shared parts in
+  `crates/app/src/widgets.rs`. Read `docs/DECISIONS.md` → UI for how the app applies it.
 
 ## Commands
 

@@ -46,11 +46,10 @@ pub enum View {
     Session,
 }
 
-/// A section of 設定, or the list of sections.
+/// A section of 設定.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum SettingsTab {
     #[default]
-    Index,
     General,
     Audio,
     Transcription,
@@ -109,7 +108,7 @@ pub struct Banner {
     pub notice: Notice,
 }
 
-const TOAST_FOR: Duration = Duration::from_secs(2);
+pub const TOAST_FOR: Duration = Duration::from_secs(2);
 
 pub struct App {
     pub core: AppHandle,
@@ -331,7 +330,7 @@ impl App {
             projects: Vec::new(),
             projects_version: 0,
             view: View::Main,
-            settings_tab: SettingsTab::Index,
+            settings_tab: SettingsTab::General,
             viewing_session: None,
             banners: Vec::new(),
             toasts: Vec::new(),
@@ -421,9 +420,9 @@ impl App {
     }
 
     pub fn go(&mut self, view: View) {
-        if view == View::Settings {
-            // 設定 opens at its list unless a section is asked for.
-            self.settings_tab = SettingsTab::Index;
+        if view == View::Settings && self.view != View::Settings {
+            // 設定 opens at its first section unless another is asked for.
+            self.settings_tab = SettingsTab::General;
         }
         self.view = view;
     }
@@ -891,9 +890,10 @@ impl App {
         if self.hidden {
             return None;
         }
-        let frame = if self.compact() { Duration::from_millis(33) } else { Duration::from_millis(16) };
-        if screens::main_view::animating(self) || screens::viewer::animating(self) {
-            return Some(frame);
+        // The recording's time and sound step ten times a second; what moves on the jello asks
+        // GPUI for its own frames.
+        if screens::main_view::stepping(self) {
+            return Some(Duration::from_millis(100));
         }
         let waves = self.app_levels.moving(self.now);
         let spinning = screens::spinning(self);
@@ -917,24 +917,26 @@ impl App {
                 View::Session => screens::viewer::view(self, ui),
             }
         };
-        let page = div()
-            .size_full()
-            .flex()
-            .flex_col()
-            .child(screens::titlebar::view(self))
-            .child(div().flex_1().min_h_0().w_full().flex().flex_col().child(body));
-        let flash = self.flash.is_some();
+        // The compact window draws its own head, with what is recorded.
+        let mut page = div().size_full().flex().flex_col();
+        if !self.compact() {
+            page = page.child(screens::titlebar::view(self));
+        }
+        let page = page.child(div().flex_1().min_h_0().w_full().flex().flex_col().child(body));
         let p = p();
+        // A screenshot rings the window in ink for a moment.
         let mut root = div()
             .relative()
             .size_full()
-            .bg(p.surface)
+            .bg(p.ground)
             .text_color(p.ink)
             .font_family(theme::SANS)
-            .text_size(px(theme::tokens::BODY_SMALL.size))
-            .border_color(if flash { p.accent } else { p.border })
+            .text_size(px(theme::tokens::BODY.size))
+            .line_height(px(theme::tokens::BODY.line_height))
             .child(page);
-        root = if flash { root.border_2() } else { root.border_1() };
+        if self.flash.is_some() {
+            root = root.border_2().border_color(p.ink);
+        }
         if self.dropping {
             root = root.child(screens::notices::drop_overlay());
         }
