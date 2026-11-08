@@ -123,7 +123,7 @@ fn the_camera_menu_checks_what_screenshots_take() {
     let (mut app, _dir) = app();
     recording(&mut app);
     let w = |id: u32, title: &str| chidori_core::screenshot::WindowInfo { id, title: title.into(), app: "App".into() };
-    let items = super::deck::shot_menu(&app, vec![w(1, "Q&A"), w(2, &"長".repeat(80))]);
+    let items = super::card::shot_menu(&app, vec![w(1, "Q&A"), w(2, &"長".repeat(80))]);
     let checks: Vec<(String, bool)> = items
         .iter()
         .filter_map(|i| match i {
@@ -145,7 +145,7 @@ fn the_camera_menu_checks_what_screenshots_take() {
     assert_eq!(labels[1].chars().count(), 60);
     // A picked window holds for the recording; the targets lose their check.
     app.rec.shot_window = Some(w(9, "Slides"));
-    let items = super::deck::shot_menu(&app, Vec::new());
+    let items = super::card::shot_menu(&app, Vec::new());
     assert!(items.iter().all(|i| !matches!(i, crate::native::menu::Item::Check { checked: true, .. })));
 }
 

@@ -6,7 +6,6 @@ pub mod history;
 pub mod main_view;
 pub mod models;
 pub mod notices;
-pub mod session_line;
 pub mod session_menu;
 pub mod settings;
 pub mod titlebar;
@@ -24,9 +23,8 @@ pub fn spinning(app: &App) -> bool {
         || dialogs::spinning(app)
 }
 
-/// What the screens keep fresh after every batch of messages (a list or deck off screen starts
-/// afresh when it shows again).
+/// What the screens keep fresh after every batch of messages (a list off screen starts afresh
+/// when it shows again).
 pub fn housekeeping(app: &App) {
     main_view::housekeeping(app);
-    viewer::housekeeping(app);
 }

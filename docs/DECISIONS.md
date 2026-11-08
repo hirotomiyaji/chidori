@@ -334,32 +334,132 @@ found a reason to deviate.
 
 ## UI
 
-- **Look: the kamon brand.** The kit's `tokens.json` (from `@yusai/kamon-react`, the
-  `kamon-brand` repository pinned to a `react-v…` tag, copied by `pnpm brand`) becomes Rust
-  constants in `build.rs`, with Chidori's 朱 as `accent`; `widgets.rs` holds the kit's components
-  (the primary with its inner line, the frame, the rule, switches, fields, dialogs) built only
-  on those tokens, and `theme::p()` gives the light or dark palette, following Windows. A warm
-  grey ground (`surface`), raised cards with hairlines, ink, and one colour, Chidori's 朱. 朱 marks what you can act on and what is selected, as
-  the brand asks, and in this app also **the voice you hear**: 相手's line and name, the live mark
-  and the tint under the line. That is the one place the app goes past the brand's rule, because
-  the line and its speaker are what the app is about, and the plover in the logo is the same 朱.
-  自分 is ink. Errors and warnings are the brand's brick and ochre on their tints with an icon and
-  words (朱 sits between them, so colour alone never carries an error). 「遅れ n秒」 30 s or more
-  behind (FR-25) is the brand's warning ochre. It (and 一時停止中) is written on the line's left
-  end, on the ground, since the row under the line has no room left beside the timer. No glows,
-  gradients, blur or shadows except the brand's one shadow on what floats (menus, dialogs, toasts).
-- **The kamon's double line** appears in its three places, lighter than the brand's default: 子持ち罫
-  only in the setup wizard, under its title and step bar, which together are its app bar (a rule
-  under the title bar and another line under the steps read as one line too many); the app's other
-  views have no rule, and the title bar sits straight on the view. The inner line is on each
-  view's one primary button (開始 before a recording, 停止 while recording, 保存 in a dialog), and
-  the frame on the container being worked in (a dialog, and a transcript line while it is edited).
-  The recording view keeps 停止 as its primary while a line is edited, since stopping must stay
-  one tap away.
-- **開始 is round**, a primary button with the record dot and no word (its name is in the tooltip
-  and for screen readers), 64 px in the middle of the expanded window and 36 px on the compact
-  line. The brand keeps `radius-full` for people, so this is a departure: the round record button
-  is the one shape everybody reads as "start recording", and it is the only round control.
+- **Look: Chidori's palette on the Jello brand** (round 9, design I2, approved 2026-11-08; the
+  `jello-brand` repository's `brand-ui` skill). Greyscale chrome on a warm grey ground (`#F2F2F0`)
+  with white surfaces and ink (`#1C1C1A`); colour says only **who is speaking** (相手 coral
+  `#D2432F`, its wave `#F58A78`; 自分 teal `#0B7A6A`, its wave `#4FC7B3`) and **that it is
+  recording** (one red dot, `#F05A47`). The palette is `theme::p()` (light and dark, following
+  Windows); the dark one is derived the same way (near-black ground, one step lighter surfaces,
+  the ink card a light card) and is provisional until Yusai has seen it. Plain filled rounded
+  rects, **no shadows, glows, gradients or blur anywhere**, and no borders except the 2 px rings
+  named below. Jello has no palette or kit of its own, so the parts (buttons, switches, panels,
+  chips, fields, dialogs) are `widgets.rs`.
+- **The 8 px grid.** Every padding, gap, height and line height is a multiple of `theme::GRID`
+  (`g(n)` is n × 8 px). Radii: 24 for panels and the recording card (`R_PANEL`), 16 for rows and
+  chips (`R_ROW`), 8 for the ON AIR tag (`R_TAG`), 4 for a bubble's speaker corner (`R_NOTCH`),
+  and buttons are pills (height / 2). The window buttons are 32 wide rather than 40 so four fit
+  beside the tabs in 420 px.
+- **One motion: jello.** `jello.rs` is the brand's `motion/jello.js` ported once (stiffness 380
+  and 520, wobble 0.75, 4 substeps, settles within 0.05 px), checked against the brand's golden
+  moves (`brand/jello-golden/`) within 0.5 px in a unit test. `motion.rs` draws it: a top that
+  springs to its target and, while it moves, a darker side under it (`side`, `ink_side`,
+  `thumb_side`); at rest only the top shows. It moves the title bar's tab pill, 設定's section
+  chip and 履歴's project chip, the chosen source row, switch thumbs, a new transcript line (in
+  from below), the recording card (in from where 開始 was), toasts (in from the bottom edge and
+  out the same way) and dialogs. Colour changes only fade; nothing loops or idles. With Windows'
+  animation effects off, everything jumps to its target with no side. Motion asks GPUI for its
+  own frames while something moves, so the app's tick does not run for it.
+- **Type.** Zen Kaku Gothic New Regular and Bold (Medium is gone: Jello has two weights, and the
+  bold reads as the one emphasis) and IBM Plex Mono for the timer only, embedded in the exe (TTF
+  from Google Fonts' repository, OFL). 14/24 body (the transcript too), 12/16 small, 11/24 for
+  the times above bubbles, 13 for tabs and buttons, 16/24 bold headings, 20/24 mono timer (16 in
+  the compact window).
+- **The title bar** is 48 high on every expanded view: 「Chidori」 in bold (the logo drawing is
+  gone from the bar; the app and tray icons stay the kamon kit's until Jello has an icon tool),
+  録音 · 履歴 · 設定 as text tabs with the current one on a white pill, 録音 with a small red dot
+  while recording elsewhere (it leads back to the recording), then always on top, shrink,
+  minimize and close as muted icons. The setup wizard shows no tabs. No bottom tabs.
+- **The start screen** is two labelled white panels. 「相手（聞き取るアプリ）」 with a refresh
+  button lists the apps (those with an audio session first), then システム全体 and マイクだけ, as
+  64 px rows of the name over 音が出ています or 無音, the chosen one bold with a check and a
+  sliding highlight; no app icons. 「自分」 holds 「会話として録音」 (FR-12) and the mic. Under
+  them, 開始 is a 72 px round ink button with the red dot, then 「開始」 with the hotkey when one
+  is set, and 「ファイルから文字起こし」 as a quiet text button (FR-18). 開始 is the one circle
+  besides the play button and the dots: everybody reads a round button with a red dot as "record".
+- **Apps say whether they are playing.** The status under each app's name is real sound: the
+  peak meters Windows keeps for every audio session (the volume mixer's bars), read by
+  `audio::win::meters` only for the apps on the start screen, twenty times a second, with
+  nothing captured and nothing sent in silence. A read takes about 30 µs and listing the
+  sessions about 2 ms.
+- **The recording card.** While recording, an ink card (24 radius, 16 padding) holds a white
+  「ON AIR」 tag (the same in both languages for now), the title (click to rename), the source
+  (`Zoom ＋ マイク`; a click opens the source menu, FR-17), 「遅れ n秒」 when 30 s or more behind
+  (FR-25), the mono timer, and the live wave: bars drawn from the levels the backend sends ten
+  times a second, 相手 rising above the middle in coral and 自分 dipping below it in teal, grey
+  while paused. These are FR-03's meters: a decorative wave would look the same in every meeting
+  and could not show a silent mic. The bar under the transcript (80 high) holds the camera and
+  its menu, the star, the cut, then pause and the ink 停止 pill with its red square; while
+  finishing, 仕上げ中 with a spinner.
+- **Switching the source while recording is a native menu** (the same as the compact window's):
+  the source choices and 「会話として録音」, each switching at once with a toast. A drawn
+  dropdown would cover the transcript and could not fit the compact window; a native menu can
+  reach past the window.
+- **A finished session** keeps the card, now white: the title (click to rename), 「11月8日 22:00 ·
+  41分 · Zoom ＋ マイク」 (the model in its tooltip), the project chip, and a 40 px round play
+  button beside the session's wave, which a click seeks (and plays from, once playing). A past
+  session opened from 履歴 has the same card with a back arrow. The bar holds コピー as an ink
+  pill split from its ▾ (「Agent用にコピー」, 「Markdownでコピー」), 書き出し as a white pill
+  (Markdown, PDF or Typst in a dialog; a menu in the compact window), 「新しい録音」 and ⋯. The
+  folder the session was saved to is in ⋯ (フォルダを開く), not on the card.
+- **Transcript: bubbles.** Every line is a white bubble at most about 77% of the width: 相手 on the
+  left and, when both sides were recorded, 自分 on the right, with the top corner on the
+  speaker's side at 4 px. The speaker's name (in their colour) and the time (in grey) sit above
+  the first line of a turn; colour is only in the name. A ★ line and the line being played or
+  jumped to get a 2 px ink ring; the line still being spoken is a hollow bubble with a 2 px grey
+  ring and faint text. Hover actions (▶, ★, edit) sit beside the bubble, away from its side. A
+  screenshot is a centred one-line marker (camera, time, スクショ) that opens the image, with its
+  caption and delete on hover; thumbnails are gone from the flow, since an image in a 296 px
+  bubble column is too small to read and pushes the talk off screen. Pause and reconnect markers
+  are centred small text; a cut is centred ink text between two rules. With one source there are
+  no names and every bubble is on the left.
+- **Speaker colours** are coral and teal rather than one colour and ink: two hues tell the sides
+  apart at a glance in the bubbles and the wave, and coral against teal stays distinct with
+  red-green colour blindness, which two reds would not.
+- **Playing back** is a ▶ in each line's hover actions and the card's play button; while it plays
+  the button shows pause, the line being played has the ink ring, and a 2 px ink playhead moves
+  along the card's wave, stepping four times a second. The transcript keeps up with the sound
+  unless the reader has scrolled away. Not while recording: the file is still being written.
+- **The compact window** (380 × 170) is three rows on the ground: the title and source (a click
+  opens the source menu) with expand and close; a white 40 px strip with the chosen source before
+  recording and the latest line with its speaker's name after; then the dot, the mono timer, a
+  short live wave, the camera and a 40 px 停止 pill (開始 before recording, the finished
+  session's actions after).
+- **履歴** opens with a 48 px white search pill, then project chips (すべて, each project with its
+  dot, プロジェクトなし, and ＋ for a new one), the chosen one on a sliding white pill. Choosing a
+  project makes the page that project's, its dot and name in place of 「履歴」, with ⋯ to rename,
+  recolour or delete it. 選択 picks several recordings to move to the Recycle Bin at once
+  (`delete_sessions`), with quick picks for all and for the greyed short and empty ones.
+- **Projects are coloured dots** (FR-64), the one place colours beyond the speakers and the record
+  dot appear, so they stay small: a round dot before a title or on a chip, never a fill. A new
+  project gets a colour no other project uses. A session joins a project from the chip on its
+  card, History's row menu or 選択, each a native menu ending in 「新しいプロジェクト…」. A new
+  recording starts in no project.
+- **設定 is chips**: 一般 · 音声 · 文字起こし · スクショ · ショートカット · 出力 in a scrolling row,
+  the chosen one on a sliding white pill, each chip's current setting in its tooltip (and 「!」 on
+  ショートカット when a hotkey is taken). Groups are white panels of 56 px rows: switches 48 × 32,
+  ink when on; choices as small ground-coloured pills. The model list opens from 文字起こし with
+  a back arrow, rather than being a seventh chip. 一般 ends with the version and ログ.
+- **Banners and toasts.** An error banner is ink with a coral icon, a warning or note a white
+  banner with a grey icon, each with words and its one action, since the palette has no tints
+  for them (provisional until Yusai has seen it). Toasts are ink pills over the bottom bar, their
+  icon telling the level.
+- **Dialogs** are white 24-radius sheets over a scrim, entering with the jello, with full-width
+  pill buttons.
+- **Less text.** Choices have no descriptions under them (the export dialog lists formats only,
+  settings have no help lines, the wizard's paragraphs are one short line or none), and labels
+  are short. Pages and wizard steps change without a slide.
+- **The star** sits between the camera and the cut while recording, and on every line's hover
+  actions (live too, unlike editing). An important line has the ink ring and ★ by its time.
+- **The cut button** (scissors) sits after the camera while recording. A cut shows in the
+  transcript as a centred marker between rules, and a toast confirms it, since the compact
+  window's strip shows only the latest line.
+- **One primary per view**: 開始, 停止 or コピー on the main view, 保存 in a dialog, 次へ in the
+  wizard; 使う in the model list and テストを開始 in the wizard's mic step are secondary.
+- **Only what moves is redrawn.** The app ticks every 100 ms while recording (the live wave and
+  timer step with the backend's levels), the spinners and toasts as they need; otherwise it
+  draws only when something changes, and motion asks for frames only while it moves. Minimized
+  or in the tray nothing ticks at all, and the core stops reading the apps' meters
+  (`host::set_ui_hidden`), while its events still arrive, so the transcript keeps up.
 - **The window opens expanded** (420 × 640) until it is shrunk; the compact window is remembered
   once chosen.
 - **Text on its way.** While recording, speech 1.5 s or more behind (the backend's lag, FR-25)
@@ -367,140 +467,28 @@ found a reason to deviate.
   before the first one, unless a grey partial already shows the words coming. A fast GPU writes a
   line within that time, so the note is for slow PCs, where text can take many seconds. 仕上げ中
   has a spinner too, since one long stretch can keep its count still.
-- **Type.** Zen Kaku Gothic New (400 and 500) and IBM Plex Mono for numbers that line up (the
-  timer, times), embedded in the exe (TTF from Google Fonts' repository, OFL) so the window never
-  fetches fonts. The transcript is the brand's body,
-  16 px on 27 px. The windows are small (380 and 420 px wide), so the UI's own text stays at 12 to
-  14 px with `body-small` as the base, rather than the brand's 16 px everywhere.
-- **The line is real sound** (`screens/main/deck.rs`, `screens/main/live_line.rs`,
-  `model/line.rs`). While
-  recording, the line across the window is drawn from the levels the backend sends ten times a
-  second: 相手 rises above it in 朱 and 自分 dips below it in ink (a single source rises above,
-  whichever it is), lightly blurred so a lone step is not a spike. A pen tip moves right from
-  where the line starts and, near the end, the line scrolls under it. Screenshots are dots on
-  the baseline and a pause leaves a dotted gap. While finishing, the steps not yet written are
-  grey and fill in as the queue empties, with the pen waiting where the written part ends. The
-  steps belong to the app (`LineHistory`, fed in `app.rs`), so the line survives a visit to
-  History or Settings. The line is the edge of the tint, so it runs from edge to edge: the pen
-  starts in line with the buttons under it (14 px, compact 12), the tint rises to the top of the
-  line, and where nothing is written, before the pen started and ahead of it, the line is grey
-  and as heavy as the written one, coming back down to the baseline just after the pen. Each
-  stretch rises from the baseline where it starts and drops back to it before a pause, so the
-  line never ends in mid-air. These are FR-03's per-source meters: a decorative wave would look
-  the same in every meeting and could not show a silent mic.
 - **A session's picture is its sound.** A shape built from when each side spoke is flat in
   continuous speech, where every slice has speech, so the recorder keeps the 10 Hz levels in
-  `levels.bin` (2 bytes per 100 ms, paused time silent), and History and the finished session
-  draw 128 slices of mean loudness, raised together so the loudest stands full height (at most
-  2×). A session without `levels.bin` falls back to when each side spoke (`shapeOf`; Rust
-  computes the same as `SessionSummary.activity` for History).
-- **Every session keeps its shape.** When a session is saved the pen lifts and the line zooms out
-  to the whole session, with dots for screenshots. Pointing at it shows the clock time; clicking
-  scrolls the transcript there and marks the row (`seek` in the transcript store). The same shape
-  is the session's picture in 履歴.
-- **開始 is the primary button.** Before a recording the expanded window has no transcript to
-  show, so the deck takes the free space under the source picker, and 開始, the brand's primary
-  button with its inner line, sits in its middle: centred in the space above the model's line at
-  the bottom and lifted a little to the optical centre (45% of that height), because at the exact
-  middle it looks low. There is no line yet; a hotkey, when one is set, sits under it, and the
-  model at the bottom edge. Starting (button or hotkey) fades 開始 while the line comes down to
-  the bottom and the pen tip grows in at its left end; the deck eases from its full height to its
-  strip as the transcript opens above it. The deck stays mounted from the start screen to the
-  finished session, so no cross-screen morph is needed. 「新しい録音」 flattens the session's line,
-  the pen fades as it rises, and 開始 comes back. The compact window has no free space: 開始 sits
-  on the left end of an empty line, where the pen will start. The brand keeps round shapes for
-  avatars, so 開始 is not a circle; the pen tip and screenshot dots
-  are marks on a chart, not controls.
-- **The logo is the brand's kamon.** The plover in the 木瓜 frame, in 朱, from the kit: the title
-  bar shows its small drawing beside the name (`<Logo app="chidori">`), the app icon is generated
-  from the kit's `icons/chidori/icon-1024.png` with its `icon.ico` copied over (it draws the small
-  sizes properly), and the tray shows the kit's small icon (`icons/tray/`), in ink while idle,
-  paused or finishing and in 朱 while recording. The logo is never redrawn or recoloured here.
-- **What to listen to is a source and a conversation switch.** The source opens one list:
-  システム全体, マイクだけ, then the apps (those playing first, その他 after, with a refresh
-  button, FR-11). Under it, 「会話として録音」 is FR-12's mic switch, worded as what it is for,
-  and its own list picks the mic (the same setting as 設定 › 音声). The names 相手 and 自分 appear
-  only in the transcript: on the switch they would mislead for recordings that are not a
-  conversation (a lecture, a video). With マイクだけ the second row only picks the mic. The
-  compact window shows the choice as one line (`Zoom · 会話`) that opens the picker over the
-  whole window, and loads the app list when it appears, so the line carries the app's icon.
-- **Apps show their sound.** In the source picker each app with an audio session shows its sound
-  beside its name while it plays (`AppWave`): the last two seconds as a small 朱 line on a grey
-  baseline, in the field and in the list. It is real sound, not a decorative wave: the peak
-  meters Windows keeps for every audio session (the volume mixer's bars), read by
-  `audio::win::meters` only for the apps on screen, twenty times a second, with nothing captured
-  and nothing sent in silence. A read takes about 30 µs and listing the sessions about 2 ms, so
-  one app costs ~0.15% of a core. The wave steps ten times a second instead of gliding every frame
-  like the recording's line: redrawn at the screen's rate it cost about 40% of a core on a 165 Hz
-  screen (measured in the web UI before the rewrite), stepping about 4%, and nothing once it
-  is quiet.
-- **Navigation is words in the title bar**: 録音 · 履歴 · 設定 in the expanded window, the current
-  one in the accent's tint (the brand's active nav), 録音 with a small 朱 mark while recording; the compact window keeps its icons. While
-  recording the title bar shows the state and the source in place of the name, and away from the
-  main view that leads back to the recording. No bottom tabs: a phone pattern that would add a
-  second way to navigate, the largest coloured area in the app, and a second layer of controls
-  under the deck while recording.
-- **One title bar** over every view (`screens/titlebar.rs`, drawn by `app.rs` above the view it
-  shows); the back arrow follows the view. The compact toggle is on every page but the wizard: only 録音 has a
-  compact form, so shrinking from 履歴 or 設定 goes to 録音.
-- **Big headers.** History, Settings, the model list, the wizard and a finished session open
-  with a big title on the ground above a hairline. A finished session's header scrolls with its
-  transcript: the title (click to rename), when it started, its length, lines and screenshots in
-  big light numerals, and 詳細, closed at first, for the model and the folder it was saved to. A
-  finished transcript gets 476 of 640 px. The header doesn't say where the session was saved
-  (「保存しました · Chidori › …」 read like a garbled 「Chidori › … に保存しました」); saving
-  shows a toast instead.
-- **Settings is a list** of its sections, each showing what it is set to now; a section opens with
-  a back arrow. A pill tab per section would overflow the 420 px window with no sign that the
-  tabs scroll.
-- **Projects are coloured squares** (FR-64), the one place colours beyond ink and 朱 appear, so
-  they stay small: a 10 px rounded square before a title, never a fill, a chip or a tinted row.
-  Seven colours from the brand's palette at the same depth (ink-subtle, 藍, 鉄, 苔, ochre, 葡萄 and
-  blush), light and dark, none of them 朱 (朱 is the voice you hear); a new project gets one no
-  other project uses. The brand keeps other apps' colours out of an app; these squares are labels
-  the user picks, not the app's colour, so they are the one exception. A session joins a project from the swatch beside the recording's title, the line
-  under a finished session's title, History's row menu (a submenu) or 選択 (a button beside
-  削除), each a native menu ending in 「新しいプロジェクト…」. History filters by project with a
-  menu button beside the search, shown only once a project exists. **A project's home is
-  履歴, not 設定**: filtered to one, the page is that project's, its square and name in place of
-  「履歴」 and its count beside them, with a ⋯ to change its name and colour (the new-project
-  dialog, filled in) or delete it. A project is a way into the sessions, not a preference, so it
-  is changed where its sessions are shown; 設定 › プロジェクト is gone. The filter menu also ends
-  in 「新しいプロジェクト…」, which opens the new, empty project's page. A new recording starts in
-  no project: one tap on the swatch puts it in one, and a default that carried over would file
-  recordings by surprise.
+  `levels.bin` (2 bytes per 100 ms, paused time silent), and the finished session's card draws
+  it as bars of mean loudness, raised together so the loudest stands full height (at most 2×). A
+  session without `levels.bin` falls back to when each side spoke. History's rows no longer draw
+  it: a 64 px row has no room for a readable wave beside the title, and the time, length and
+  screenshot count say more.
 - **History is grouped by day** (今日 and 昨日 with the date, then dates) and searchable by title
-  and opening words (`SessionSummary.preview`), each row with its title, time, line, opening
-  words and length. A recording shorter than 10 s or with no transcript (most likely a test or
-  started by accident) is greyed out and has no line; it still opens, and its menu still deletes
+  and opening words (`SessionSummary.preview`), each day one white panel of 64 px rows (the project's dot, the title, then the time, length
+  and screenshots, with the opening words as its tooltip) and no dividers. A recording shorter than 10 s or with no transcript (most likely a test or
+  started by accident) is greyed out; it still opens, and its menu still deletes
   it. 選択 picks several recordings to move to the Recycle Bin at once (`delete_sessions`), with
   quick picks for all and for the greyed short and empty ones.
-- **Playing back** is a ▶ in each line's hover actions (any line plays from where it starts) and
-  a play button first in a finished session's row; while it plays the button is inverted like
-  the paused pause button, the line being played has the soft background a jump uses, and a
-  2 px ink playhead moves along the session's line, stepping four times a second with a 250 ms
-  glide instead of redrawing every frame (see the cost of per-frame redraws above). The
-  transcript keeps up with the sound unless the reader has scrolled away from the playing line.
-  Not while recording: the file is still being written.
 - **続きを録音 is in the ⋯ menus** (a finished session's and History's rows), not a button of its
   own: the finished session's row already holds four buttons in the compact window, and
   continuing is rarer than starting anew. It records with the source the picker holds and opens
   the recording view; while something records, it is greyed out.
 - **A session has one ⋯ menu** (`screens/session_menu.rs`, docs/OBJECTS.md), wherever it is shown, so
   it offers the same actions open or as a row: 復元 (a crashed session), 続きを録音, フォルダを開く
-  and 削除. A History row, which has no deck or header, adds コピー ▸, 書き出し…, 名前を変更 and
+  and 削除. A History row, which has no card, adds コピー ▸, 書き出し…, 名前を変更 and
   プロジェクト ▸. Rename and delete confirm in dialogs shared by both (`screens/dialogs.rs`). Deleting
   the session on screen takes it off: the main view goes back to 開始, a past session to 履歴.
-- **A finished session's buttons**: 再生, コピー ▾, 書き出し, which opens a dialog to pick
-  Markdown, PDF or Typst (the compact window, too small for it, shows a menu), the ⋯ menu, and
-  「新しい録音」. コピー copies plain text and its chevron picks 「Agent用にコピー」 or
-  「Markdownでコピー」, joined into one control the way the camera and its menu are: the three
-  are one action in three formats, so they sit together rather than split between a button and
-  ⋯.
-- **Less text.** Choices have no descriptions under them (the source field is one line,
-  「会話として録音」 shows only the mic's name, the export dialog lists formats only, settings
-  have no help lines, the wizard's paragraphs are one short line or none), and labels are short
-  (「ソース」). Pages and wizard steps change without a slide.
 - **Always on top is off by default**, toggled by a pin in the title bar on every page.
 - **Screenshots take the recorded app by default**: its window while recording an app, the
   cursor's screen while recording system audio or the mic alone (`appWindow`).
@@ -511,38 +499,13 @@ found a reason to deviate.
   window seldom outlives one. A picked window that has closed or been minimized falls back to the
   cursor's screen, with the usual 「（カーソルの画面）」 toast. The picked window travels in
   `recording://state` (`shotWindow`), so the menu's check marks follow the backend.
-- **Speaker names** are coloured text: 相手 朱, 自分 ink. A darker 朱 for 自分 would be hard to
-  tell from 相手 and nearly identical with red-green colour blindness. Provisional text is the
-  brand's subtle ink.
-- **Hairlines part a screen.** The only waves are the sound. Corners are the brand's: 8 px for
-  buttons and fields, 12 px for cards, menus and dialogs, 6 px for tags and switches, and no pill
-  anywhere. Dialogs are centred sheets in the kamon's frame with full-width buttons. Transcript
-  markers (pause, reconnect) keep a straight line. Weights are 400 and 500 only, the two the
-  brand's font is bundled in.
 - **Japanese line breaks** follow Unicode's line breaking (cosmic-text), so a line can break
   inside a word such as ヘッドホン or ください. The web UI broke between phrases
   (`word-break: auto-phrase`); doing that here needs a phrase splitter of our own.
-- **Only what moves is redrawn.** The app ticks only while something moves: the live line about
-  60 times a second while recording (30 in the compact window, on screen through whole
-  meetings), the waves and spinners 20 times, toasts 10; otherwise it draws only when something
-  changes. Minimized or in the tray nothing ticks at all, and the core stops reading the apps'
-  meters (`host::set_ui_hidden`), while its events still arrive, so the transcript keeps up.
 - **The transcript builds only the rows in view** (`screens/main/transcript.rs`): GPUI's `list`
   measures and draws only the rows on screen, and the list's rows are rebuilt only when the
   transcript changes, so a line frame never rebuilds the transcript. (Under Iced, which lays out
   what it is given every frame, 2000 plain rows cost 13% of a core and 71 MB in the spike.)
-- **The transcript runs on under the deck to its line.** The line lies 30 px into the deck; if
-  the transcript stopped at the deck's top, text would vanish at an invisible edge above the
-  wave. Once there is a transcript the expanded deck reaches up under it by that much and is
-  see-through above the line: the text goes right up to the wave and only the tint under the
-  line covers it. The deck lets the pointer through to
-  the text, except on its buttons and, after a recording, a band around the line where pointing
-  shows the time. Scrolled to the end, the last line still rests clear of the deck.
-- **Transcript.** Lines are grouped into turns: with both 相手 and 自分 recorded the speaker,
-  then the time, head each turn on its own line, and the text runs the full width (a new turn
-  starts at a speaker change, after a picture or marker, and every minute). There is no time
-  column: at 52 px it would push the text to x = 80 and wrap lines after about 23 characters.
-  With one source there are no speaker names.
 - **Screenshot placement is strictly chronological** (section 9). Placing a screenshot after
   every sentence containing its time put it after sentences that started later: Whisper often
   cuts one utterance into back-to-back segments, and a segment starting exactly at the
@@ -550,47 +513,22 @@ found a reason to deviate.
 - **最新へ jumps from far away.** More than two screens above the newest line it scrolls there
   at once instead of gliding: in a long session left in the background the glide took seconds,
   and rows measured on the way kept moving the end.
-- **The recording keeps a header**: the title (click to rename, as in a finished session) and
-  the source as one line (`Zoom · 会話`), above the transcript and outside its scroll, so both stay
-  in view in a long session. It is small (one line, 15 px title) because the transcript is what
-  the window is for. The source is a dropdown under that line, right-aligned and at least 280 px
-  wide, with the same rows as the start screen's list (the apps with their sound) and
-  「会話として録音」 as a switch under them; each change switches at once (one tap, no 適用
-  button), and a toast confirms it. Not the start screen's picker over the whole window: a
-  dropdown keeps the transcript in view. The compact window has no room for a header or a
-  dropdown, so its title bar's 録音中 tag opens a native menu with the same choices, which may
-  reach past the window; away from the main view the tag still leads back to the recording. The
-  switching itself (`useLiveSource`) runs for the whole recording, whichever control changed the
-  choice, and first takes the choice from the settings without switching, since a recording
-  started by the hotkey uses the last-used source the picker never showed.
-- **The star** sits between the camera and the cut while recording, and on every line's hover
-  actions (live too, unlike editing). An important line has an ink stroke in the left margin
-  and medium-weight text; 朱 stays the voice you hear. The compact window's two lines show a star.
 - **More hotkeys.** Important mark and cut have hotkeys too (off until set), since a meeting
   app is usually in front. Pressed from another app, they confirm with a toast; all four share
   one registration loop, and one set to the same keys as another is reported, not registered.
-- **The cut button** (scissors) sits after the camera while recording. A cut shows in the
-  transcript as a marker with a darker rule and more space above it, and a toast confirms it,
-  since the compact window's two lines leave markers out.
 - **The timer leaves out paused time** (`StatePayload.elapsedMs`); session times still count
   it, so the clock times in the transcript stay true.
-- **Animations** are the deck's own: the start, settling into the whole session, and 新しい録音
-  rising back. Rows and buttons don't fade in, and Windows' reduce-motion setting isn't read yet.
 - **The session viewer has its own transcript** (`screens/viewer.rs`), so a
   recording that runs while a past session is open keeps receiving its lines.
 - **The … menu is a native popup menu** (`native/menu.rs`, through `muda`), because the compact
   window (380×170) is too small to hold a dropdown and a menu drawn by the app cannot reach past
   its window. A pick comes back as an id, routed by its prefix to the screen that opened it.
-- **The source lists are drawn**, not native (`screens/main/popover.rs`), because they show each
-  app's icon and live wave. The compact picker opens over the whole window under the title bar.
 - **No screen reader or keyboard navigation yet.** The app gives GPUI no accessibility labels or
   tab order yet, so the web UI's `aria-label`s and tab order have no counterpart. Icon buttons
   keep their names as tooltips; Escape, Enter and the hotkeys work. Revisit in the redesign.
 - **Text boxes save on Enter** (and the check button), as they did under Iced, which had no event
   for a box losing focus.
   設定's word list and title format also save at the next click anywhere.
-- **One primary per view, strictly**: 使う in the model list and テストを開始 in the wizard's mic
-  step are secondary buttons, since a list can hold several models and 次へ is the step's primary.
 - **Closing the window** hides it to the tray only while recording or finishing; when idle it
   quits (FR-93 only covers the recording case).
 - **Window position** is remembered with `tauri-plugin-window-state`; the size follows the

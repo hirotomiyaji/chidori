@@ -20,7 +20,7 @@ use crate::i18n::{is_ja, t, tf};
 use crate::icons::{Icon, icon};
 use crate::model::format::{bytes, model_name_parts};
 use crate::task::Task;
-use crate::theme::{self, Ink, line, p, tokens};
+use crate::theme::{self, Ink, g, line, p, tokens};
 use crate::ui::El;
 use crate::widgets::{self, Size, Variant, btn, btn_icon, col, fill, icon_button, progress, row, spinner, with_tip};
 
@@ -260,7 +260,7 @@ pub fn spinning(app: &App) -> bool {
 pub fn list(app: &App) -> El {
     let s = &app.models_ui;
     let (models, waiting) = shown(&app.models, &s.progress, s.more);
-    let mut c = col().w_full().gap(px(tokens::SPACE_2));
+    let mut c = col().w_full().gap(g(1.0));
     for m in models {
         c = c.child(model_row(app, m));
     }
@@ -268,8 +268,8 @@ pub fn list(app: &App) -> El {
         c = c.child(form::link(
             row()
                 .gap(px(4.0))
-                .child(icon(Icon::ChevronDown, 13.0, p().ink_muted))
-                .child(theme::plain(tf("moreModels", &[("n", &waiting)]), tokens::CAPTION).medium()),
+                .child(icon(Icon::ChevronDown, 13.0, p().muted))
+                .child(theme::plain(tf("moreModels", &[("n", &waiting)]), tokens::SMALL).bold()),
             Message::ModelsUi(Msg::More),
         ));
     }
@@ -277,7 +277,7 @@ pub fn list(app: &App) -> El {
     if app.info.gpu_failed {
         c = c.child(btn(t("retryGpu"), Variant::Secondary, Size::Sm, Some(Message::ModelsUi(Msg::RetryGpu))));
     }
-    div().w_full().px(px(tokens::SPACE_3)).pt(px(tokens::SPACE_1)).pb(px(tokens::SPACE_4)).child(c).into_any_element()
+    div().w_full().px(g(2.0)).pt(g(1.0)).pb(g(2.0)).child(c).into_any_element()
 }
 
 /// ファイルから追加: a model downloaded elsewhere, one button per model not on this PC.
@@ -286,11 +286,11 @@ fn import(app: &App) -> El {
     let summary = form::link(
         row()
             .gap(px(4.0))
-            .child(icon(if open { Icon::ChevronDown } else { Icon::ChevronRight }, 13.0, p().ink_muted))
-            .child(theme::plain(t("importFromFile"), tokens::CAPTION)),
+            .child(icon(if open { Icon::ChevronDown } else { Icon::ChevronRight }, 13.0, p().muted))
+            .child(theme::plain(t("importFromFile"), tokens::SMALL)),
         Message::ModelsUi(Msg::ToggleImport),
     );
-    let mut c = col().gap(px(6.0)).pt(px(tokens::SPACE_1)).items_start().child(summary);
+    let mut c = col().gap(px(6.0)).pt(g(1.0)).items_start().child(summary);
     if open {
         let mut buttons = div().flex().flex_wrap().gap(px(6.0));
         for m in app.models.iter().filter(|m| (!m.entry.hidden || m.installed) && !m.installed) {
@@ -327,15 +327,15 @@ fn model_row(app: &App, m: &ModelEntry) -> El {
     }
     let mut about = col().gap(px(2.0)).flex_1().min_w_0().child(name).child(theme::t(
         format!("{} · {} · {}", description_of(m), bytes(m.entry.size_bytes), m.entry.license),
-        tokens::CAPTION,
-        p().ink_muted,
+        tokens::SMALL,
+        p().muted,
     ));
     if let Some(b) = s.bench.get(&m.entry.id).copied().or_else(|| stored_bench(m)) {
         let mut text = b.text();
         if b.heavy() {
             text = format!("{text} — {}", t("tierHeavyHint"));
         }
-        about = about.child(theme::t(text, tokens::CAPTION, if b.heavy() { p().warning } else { p().success }));
+        about = about.child(theme::t(text, tokens::SMALL, if b.heavy() { p().them } else { p().me }));
     }
 
     let mut actions = row().gap(px(4.0)).flex_none();
@@ -390,23 +390,20 @@ fn model_row(app: &App, m: &ModelEntry) -> El {
         ));
     }
 
-    let mut body =
-        col().w_full().child(div().flex().items_start().w_full().gap(px(tokens::SPACE_2)).child(about).child(actions));
+    let mut body = col().w_full().child(div().flex().items_start().w_full().gap(g(1.0)).child(about).child(actions));
     if getting && let Some(p) = prog {
-        body = body.child(div().h(px(tokens::SPACE_2))).child(download_progress(p.received, p.total, p.bytes_per_sec));
+        body = body.child(div().h(g(1.0))).child(download_progress(p.received, p.total, p.bytes_per_sec));
     }
     form::card(body, in_use).into_any_element()
 }
 
 /// A download's bar, with how much has come and how fast.
 pub fn download_progress(received: u64, total: u64, bytes_per_sec: f64) -> El {
-    let mut numbers = row()
-        .w_full()
-        .child(line(format!("{} / {}", bytes(received), bytes(total)), tokens::CAPTION, p().ink_muted).mono());
+    let mut numbers =
+        row().w_full().child(line(format!("{} / {}", bytes(received), bytes(total)), tokens::SMALL, p().muted).mono());
     if bytes_per_sec > 0.0 {
         numbers = numbers.child(fill()).child(
-            line(tf("downloadSpeed", &[("speed", &bytes(bytes_per_sec as u64))]), tokens::CAPTION, p().ink_muted)
-                .mono(),
+            line(tf("downloadSpeed", &[("speed", &bytes(bytes_per_sec as u64))]), tokens::SMALL, p().muted).mono(),
         );
     }
     col().w_full().gap(px(4.0)).child(progress(received as f32, total as f32)).child(numbers).into_any_element()
@@ -437,15 +434,15 @@ pub fn note(app: &App) -> Option<El> {
     .collect::<Vec<_>>()
     .join("\n");
 
-    let mut body = row().gap(px(4.0)).child(line(name.short, tokens::CAPTION, p().ink).medium());
+    let mut body = row().gap(px(4.0)).child(line(name.short, tokens::SMALL, p().ink).bold());
     if let Some(d) = device {
-        body = body.child(line(format!("· {d}"), tokens::CAPTION, p().ink_muted));
+        body = body.child(line(format!("· {d}"), tokens::SMALL, p().muted));
     }
     if loading {
         body = body.child(spinner(11.0, app.now));
     }
     if failed {
-        body = body.child(line(format!("· {}", t("modelFailed")), tokens::CAPTION, p().ink).medium());
+        body = body.child(line(format!("· {}", t("modelFailed")), tokens::SMALL, p().ink).bold());
     }
     let content: El = if busy {
         body.into_any_element()

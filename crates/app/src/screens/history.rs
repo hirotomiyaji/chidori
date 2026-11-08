@@ -1,30 +1,30 @@
-//! 履歴: past sessions by day, each with its own line; searchable by title and opening words
-//! (FR-62, FR-63), and narrowed to one project (FR-64), which makes the page that project's: its
-//! name on top and its own menu to change or delete it. 選択 picks several to move to the Recycle
+//! 履歴: past sessions by day, each day a white panel of rows; searchable by title and opening
+//! words (FR-62, FR-63), and narrowed to one project by its chip (FR-64), which makes the page that
+//! project's: its name on top and its own menu to change or delete it. 選択 picks several to move to the Recycle
 //! Bin at once, such as all the short and empty ones, or to put in a project.
 
 use std::collections::HashSet;
 
 use chidori_core::ops;
-use chidori_core::session::model::SourceId;
 use chidori_core::session::projects::Project;
 use chidori_core::session::recovery::SessionSummary;
 use chrono::{Datelike, Local, NaiveDate};
-use gpui_kit::{InteractiveElement, IntoElement, ParentElement, SharedString, Styled, div, px};
+use gpui_kit::{InteractiveElement, IntoElement, ParentElement, StatefulInteractiveElement, Styled, div, px};
 
 use super::dialogs::{self, project_mark};
-use super::session_menu::{self, SessionRef, menu_text};
-use super::{form, session_line};
+use super::form;
+use super::session_menu::{self, SessionRef};
 use crate::app::{App, Message, View, call};
 use crate::i18n::{t, tf};
 use crate::icons::{Icon, icon};
 use crate::model::format::{DayName, day_name, day_of, day_text, duration_text, time_of};
-use crate::model::line::{Shape, shape_from_activity};
 use crate::native::menu::Item;
 use crate::task::{self, Task};
-use crate::theme::{self, Ink, line, p, plain, tokens};
+use crate::theme::{self, GRID, Ink, R_PANEL, R_ROW, R_TAG, g, line, p, project_color, tokens};
 use crate::ui::{El, Field, KeyPress, Ui, clickable};
-use crate::widgets::{Size, Variant, btn, col, hairline, icon_button, row, with_tip};
+use crate::widgets::{
+    Size, Variant, btn, chip, chips, col, fill, group_label, icon_button, panel, row, text_button, with_tip,
+};
 
 const SEARCH: &str = "history-search";
 
@@ -43,19 +43,15 @@ pub struct State {
     today: Option<NaiveDate>,
 }
 
-/// A row: the session and its line, built once when the list loads.
+/// A row: the session as the list loaded it.
 #[derive(Debug, Clone)]
 struct Entry {
     s: SessionSummary,
-    shape: Shape,
-    /// It has both sides, so its line has 自分 below the baseline.
-    two: bool,
 }
 
 impl Entry {
     fn new(s: SessionSummary) -> Self {
-        let two = s.sources.contains(&SourceId::Mic) && s.sources.iter().any(|id| *id != SourceId::Mic);
-        Entry { shape: shape_from_activity(&s.activity), two, s }
+        Entry { s }
     }
 }
 
@@ -76,12 +72,13 @@ pub enum Msg {
     ToggleSelecting,
     Open(String),
     RowMenu(String),
-    FilterMenu,
     /// The project's own menu, on its page.
     PageMenu,
     /// Selects every row shown, or none once all are.
     ChooseAll,
     ChooseEmpty,
+    /// A chip: the same as the pick of that name in the project menu.
+    Pick(String),
     ChosenProjectMenu,
     DeleteChosen,
 }
@@ -230,7 +227,7 @@ pub fn update(app: &mut App, m: Msg) -> Task {
             let s = SessionRef { id: &e.s.id, recoverable: e.s.recoverable, project: e.s.project.as_deref() };
             Task::done(Message::Popup(session_menu::items(app, s, true), None))
         }
-        Msg::FilterMenu => Task::done(Message::Popup(filter_menu(app), None)),
+        Msg::Pick(rest) => on_menu(app, &rest),
         Msg::PageMenu => Task::done(Message::Popup(
             vec![
                 Item::action("history:edit-project", t("editProject")),
@@ -265,20 +262,6 @@ pub fn update(app: &mut App, m: Msg) -> Task {
             Task::none()
         }
     }
-}
-
-/// The project filter: all, each project, none, then a new project.
-fn filter_menu(app: &App) -> Vec<Item> {
-    let filter = effective(&app.history.filter, &app.projects);
-    let mut items = vec![Item::check("history:filter-all", t("allProjects"), filter == Filter::All)];
-    for p in &app.projects {
-        let on = filter == Filter::Project(p.id.clone());
-        items.push(Item::check(format!("history:filter:{}", p.id), menu_text(&p.name), on));
-    }
-    items.push(Item::check("history:filter-none", t("noProject"), filter == Filter::None));
-    items.push(Item::Separator);
-    items.push(Item::action("history:filter-new", t("newProjectMenu")));
-    items
 }
 
 pub fn on_menu(app: &mut App, rest: &str) -> Task {
@@ -333,21 +316,18 @@ pub fn view(app: &App, ui: &mut Ui) -> El {
                 if page.is_some() && st.query.trim().is_empty() { t("projectEmpty") } else { t("historyNoMatch") };
             div()
                 .w_full()
-                .p(px(tokens::SPACE_8))
+                .p(g(4.0))
                 .flex()
                 .justify_center()
-                .child(theme::t(text, tokens::BODY_SMALL, p().ink_muted).text_center())
+                .child(theme::t(text, tokens::BODY, p().muted).text_center())
                 .into_any_element()
         }
         Some(_) => {
             let today = st.today.unwrap_or_else(|| Local::now().date_naive());
-            let mut sections = col().px(px(10.0)).pb(px(tokens::SPACE_3));
+            let mut sections = col().gap(g(1.0)).px(g(2.0)).pb(g(2.0));
             for (day, items) in &days {
-                let mut rows = col().gap(px(2.0));
-                for e in items {
-                    rows = rows.child(row_view(app, e, page.is_some()));
-                }
-                sections = sections.child(col().child(day_header(day, today)).child(rows));
+                let rows = items.iter().map(|e| row_view(app, e, page.is_some())).collect();
+                sections = sections.child(day_header(day, today)).child(panel(rows));
             }
             form::scroll(sections)
         }
@@ -356,213 +336,179 @@ pub fn view(app: &App, ui: &mut Ui) -> El {
     let mut page_col = col()
         .size_full()
         .child(header(app, ui, page, &filter, &shown))
-        .child(hairline())
         .child(div().flex_1().min_h_0().w_full().flex().flex_col().child(list));
     if st.selecting {
-        page_col = page_col.child(hairline()).child(selection_bar(app, &shown));
+        page_col = page_col.child(selection_bar(app, &shown));
     }
     page_col.into_any_element()
 }
 
-/// The title (or the project's square and name), its count, ⋯ and 選択; the search and the
-/// project filter under it, and while selecting, the quick picks.
+/// The search pill, the project chips with 選択 after them, and while selecting, the quick picks.
+/// On a project's page, its name and menu come first.
 fn header(app: &App, ui: &mut Ui, page: Option<&Project>, filter: &Filter, shown: &[&Entry]) -> El {
     let st = &app.history;
     let sessions = st.sessions.as_deref().unwrap_or(&[]);
-    let title: El = match page {
+    let mut c = col().w_full().flex_none().gap(g(1.0)).px(g(2.0)).pt(g(1.0)).pb(g(1.0));
+
+    if let Some(pr) = page {
+        let n = sessions.iter().filter(|e| e.s.project.as_deref() == Some(pr.id.as_str())).count();
         // A long name wraps rather than pushing the count and the menu out of the window.
-        Some(pr) => row()
-            .gap(px(10.0))
+        let title = row()
+            .gap(g(1.0))
+            .flex_1()
             .min_w_0()
-            .child(project_mark(Some(&pr.color), 14.0))
-            .child(theme::t(pr.name.clone(), tokens::TITLE, p().ink).min_w_0())
-            .into_any_element(),
-        None => line(t("historyTitle"), tokens::TITLE, p().ink).into_any_element(),
-    };
-    let count = match page {
-        Some(pr) => Some(sessions.iter().filter(|e| e.s.project.as_deref() == Some(pr.id.as_str())).count()),
-        None => (!sessions.is_empty()).then_some(sessions.len()),
-    };
-    let mut top = div().flex().items_end().gap(px(10.0)).flex_1().min_w_0().child(title);
-    if let Some(n) = count {
-        top = top.child(line(tf("historyCount", &[("n", &n)]), tokens::CAPTION, p().ink_muted).pb(px(5.0)));
+            .child(project_mark(Some(&pr.color), GRID))
+            .child(theme::t(pr.name.clone(), tokens::HEADING, p().ink).min_w_0())
+            .child(line(tf("historyCount", &[("n", &n)]), tokens::SMALL, p().muted).flex_none());
+        c = c.child(row().w_full().pl(g(2.0)).child(title).child(icon_button(
+            Icon::Ellipsis,
+            t("projectMenu"),
+            Size::Md,
+            Some(msg(Msg::PageMenu)),
+        )));
     }
-    let mut actions = row().gap(px(4.0));
-    if page.is_some() {
-        actions = actions.child(icon_button(Icon::Ellipsis, t("projectMenu"), Size::Sm, Some(msg(Msg::PageMenu))));
-    }
-    if !sessions.is_empty() {
-        let label = if st.selecting { t("done") } else { t("select") };
-        actions = actions.child(btn(label, Variant::Ghost, Size::Sm, Some(msg(Msg::ToggleSelecting))));
-    }
-    let top = row().w_full().child(top).child(actions);
 
     let search =
         ui.input(Field::new(SEARCH, &st.query, |q| msg(Msg::Query(q))).placeholder(t("searchHistory")).search());
-    let mut search_row = row().w_full().gap(px(6.0)).child(div().flex_1().min_w_0().child(search));
-    if !app.projects.is_empty() {
-        search_row = search_row.child(filter_button(page, filter));
-    }
+    c = c
+        .child(row().w_full().h(g(6.0)).px(g(2.0)).rounded(g(3.0)).bg(p().surface).child(div().flex_1().child(search)));
 
-    let mut c = col().w_full().child(top).child(div().h(px(10.0))).child(search_row);
+    let mut chips_row = row().w_full().gap(g(1.0));
+    if !app.projects.is_empty() || matches!(filter, Filter::None) {
+        let mut items =
+            vec![chip(t("allChip"), None, *filter == Filter::All, Some(msg(Msg::Pick("filter-all".into()))))];
+        let mut chosen = (*filter == Filter::All).then_some(0);
+        for pr in &app.projects {
+            let on = *filter == Filter::Project(pr.id.clone());
+            if on {
+                chosen = Some(items.len());
+            }
+            items.push(chip(
+                pr.name.clone(),
+                Some(project_color(&pr.color)),
+                on,
+                Some(msg(Msg::Pick(format!("filter:{}", pr.id)))),
+            ));
+        }
+        if *filter == Filter::None {
+            chosen = Some(items.len());
+        }
+        items.push(chip(t("noProject"), None, *filter == Filter::None, Some(msg(Msg::Pick("filter-none".into())))));
+        let strip =
+            div().id("history-chips").flex_1().min_w_0().overflow_x_scroll().child(chips("history", items, chosen));
+        chips_row = chips_row.child(strip);
+    } else {
+        chips_row = chips_row.child(fill());
+    }
+    chips_row =
+        chips_row.child(icon_button(Icon::Plus, t("newProject"), Size::Md, Some(msg(Msg::Pick("filter-new".into())))));
+    if !sessions.is_empty() {
+        let label = if st.selecting { t("done") } else { t("select") };
+        chips_row = chips_row.child(btn(label, Variant::Ghost, Size::Sm, Some(msg(Msg::ToggleSelecting))));
+    }
+    c = c.child(chips_row);
+
     if st.selecting {
         let all = !shown.is_empty() && shown.iter().all(|e| st.selected.contains(&e.s.id));
         let empties = shown.iter().filter(|e| is_empty_session(&e.s)).count();
-        let mut picks = row()
-            .gap(px(tokens::SPACE_4))
-            .px(px(2.0))
-            .pt(px(tokens::SPACE_2))
-            .child(link(if all { t("selectNone") } else { t("selectAll") }, msg(Msg::ChooseAll)));
+        let mut picks = row().gap(g(1.0)).child(text_button(
+            None,
+            if all { t("selectNone") } else { t("selectAll") },
+            Some(msg(Msg::ChooseAll)),
+        ));
         if empties > 0 {
-            picks = picks.child(link(tf("selectEmpty", &[("n", &empties)]), msg(Msg::ChooseEmpty)));
+            picks = picks.child(text_button(None, tf("selectEmpty", &[("n", &empties)]), Some(msg(Msg::ChooseEmpty))));
         }
         c = c.child(picks);
     }
-    div().w_full().flex_none().px(px(tokens::SPACE_4)).py(px(tokens::SPACE_3)).child(c).into_any_element()
+    c.into_any_element()
 }
 
-/// The project filter beside the search, shown once a project exists: what it narrows to, in ink
-/// with its square when it narrows.
-fn filter_button(page: Option<&Project>, filter: &Filter) -> El {
-    let narrowed = *filter != Filter::All;
-    let name = match (page, filter) {
-        (Some(p), _) => p.name.clone(),
-        (None, Filter::None) => t("noProject"),
-        _ => t("project"),
-    };
-    let mut content = row().gap(px(6.0)).min_w_0();
-    if narrowed {
-        content = content.child(project_mark(page.map(|p| p.color.as_str()), 10.0));
-    }
-    let text = plain(name, tokens::CAPTION).min_w_0().overflow_hidden().text_ellipsis();
-    let text = if narrowed { text.medium() } else { text };
-    content = content.child(text).child(icon(Icon::ChevronDown, 13.0, p().ink_muted));
-    let pal = p();
-    let strong = pal.border_strong;
-    let b = clickable(Some(msg(Msg::FilterMenu)), "filter")
-        .flex()
-        .flex_none()
-        .items_center()
-        .max_w(px(140.0))
-        .h(px(38.0))
-        .px(px(10.0))
-        .border_1()
-        .border_color(if narrowed { pal.ink } else { pal.border })
-        .rounded(px(tokens::RADIUS_MD))
-        .text_color(if narrowed { pal.ink } else { pal.ink_muted })
-        .child(content);
-    if narrowed { b } else { b.hover(move |s| s.border_color(strong)) }.into_any_element()
-}
-
-/// A quiet text button: muted, ink when pointed at.
-fn link(label: String, on: Message) -> El {
-    let ink = p().ink;
-    clickable(Some(on), ("link", &label))
-        .text_color(p().ink_muted)
-        .hover(move |s| s.text_color(ink))
-        .child(plain(label, tokens::CAPTION).medium())
-        .into_any_element()
-}
-
-/// 今日 or 昨日 with the date, or the date alone.
+/// 今日 or 昨日 with the date, or the date alone, over the day's panel.
 fn day_header(day: &str, today: NaiveDate) -> El {
     let name = day_name(day, today).map(|d| match d {
         DayName::Today => t("today"),
         DayName::Yesterday => t("yesterday"),
     });
     let date = day_text(day, today.year());
-    let mut r = row().gap(px(tokens::SPACE_2)).pt(px(14.0)).pb(px(tokens::SPACE_1)).px(px(tokens::SPACE_2));
-    match name {
-        Some(name) => {
-            r = r.child(line(name, tokens::CAPTION, p().ink).medium()).child(line(
-                date,
-                tokens::CAPTION,
-                p().ink_muted,
-            ));
-        }
-        None => r = r.child(line(date, tokens::CAPTION, p().ink).medium()),
-    }
-    r.into_any_element()
+    let text = match name {
+        Some(name) => format!("{name} · {date}"),
+        None => date,
+    };
+    div().pt(g(1.0)).child(group_label(text)).into_any_element()
 }
 
-/// One past session: its title (after its project's square, unless the page is that project's),
-/// time, line, opening words and length. While selecting, a tick leads and a click ticks it.
+/// 「22:00 · 41分 · 3枚のスクショ」.
+fn row_meta(s: &SessionSummary) -> String {
+    let mut parts = vec![time_of(&s.started_at), duration_text(s.duration_ms)];
+    if s.screenshots > 0 {
+        parts.push(tf("shotsCount", &[("n", &s.screenshots)]));
+    }
+    parts.join(" · ")
+}
+
+/// One past session, 64 high: its project's dot and title over when and how long, then ⋯. While
+/// selecting, a tick leads and a click ticks it. A short or empty one is in grey.
 fn row_view(app: &App, e: &Entry, in_project: bool) -> El {
     let st = &app.history;
     let s = &e.s;
     let empty = is_empty_session(s);
     let checked = st.selecting && st.selected.contains(&s.id);
-    let ink = if empty { p().ink_muted } else { p().ink };
-    let group: SharedString = format!("history-row-{}", s.id).into();
+    let ink = if empty { p().muted } else { p().ink };
 
-    let mut title = row().gap(px(tokens::SPACE_2)).flex_1().min_w_0().overflow_hidden();
+    let mut title = row().gap(g(1.0)).w_full().min_w_0().overflow_hidden();
     if !in_project && let Some(project) = known(&app.projects, s.project.as_deref()) {
-        title = title.child(with_tip(project_mark(Some(&project.color), 10.0), project.name.clone()));
+        title = title.child(with_tip(project_mark(Some(&project.color), GRID), project.name.clone()));
     }
-    let style = if empty { tokens::BODY_SMALL } else { tokens::LABEL };
-    title = title.child(line(s.title.clone(), style, ink).min_w_0());
+    title = title.child(line(s.title.clone(), tokens::BODY, ink).min_w_0());
     if s.recoverable {
         title = title.child(
-            line(t("needsRecovery"), tokens::CAPTION, p().warning)
-                .medium()
+            line(t("needsRecovery"), tokens::SMALL, p().on_ink)
+                .bold()
                 .flex_none()
-                .px(px(6.0))
-                .bg(p().warning_tint)
-                .rounded(px(tokens::RADIUS_SM)),
+                .px(g(1.0))
+                .bg(p().ink)
+                .rounded(px(R_TAG)),
         );
     }
-    // The time gives way to the row's ⋯ while the row is pointed at.
-    let mut time = line(time_of(&s.started_at), tokens::CAPTION, p().ink_muted).mono().flex_none();
-    if !st.selecting {
-        time = time.group_hover(group.clone(), |s| s.invisible());
+    let mut meta = row_meta(s);
+    if !s.preview.is_empty() && !empty {
+        meta = format!("{meta} · {}", s.preview);
     }
-    let top = row().gap(px(10.0)).w_full().child(title).child(time);
+    let body = col().flex_1().min_w_0().child(title).child(line(meta, tokens::SMALL, p().muted).min_w_0());
 
-    let preview = if s.preview.is_empty() { t("emptyTranscript") } else { s.preview.clone() };
-    let bottom = row()
-        .gap(px(10.0))
-        .w_full()
-        .child(line(preview, tokens::CAPTION, p().ink_muted).flex_1().min_w_0())
-        .child(line(duration_text(s.duration_ms), tokens::CAPTION, p().ink_muted).flex_none());
-
-    let mut body = col().flex_1().min_w_0().child(top);
-    if !empty {
-        body =
-            body.child(div().w_full().h(px(30.0)).pt(px(6.0)).pb(px(4.0)).child(session_line::small(&e.shape, e.two)));
-    }
-    body = body.child(bottom);
-
-    let mut content = row().gap(px(tokens::SPACE_3)).w_full();
+    let mut content = row().gap(g(2.0)).w_full();
     if st.selecting {
         content = content.child(tick(checked));
     }
     content = content.child(body);
+    if !st.selecting {
+        content = content.child(icon_button(
+            Icon::Ellipsis,
+            t("moreActions"),
+            Size::Md,
+            Some(msg(Msg::RowMenu(s.id.clone()))),
+        ));
+    }
 
-    let sunk = p().surface_sunken;
+    let hover = p().hover_panel;
     let mut row_button = clickable(Some(msg(Msg::Open(s.id.clone()))), ("history-row", &s.id))
-        .group(group.clone())
-        .relative()
+        .flex()
+        .items_center()
         .w_full()
-        .pt(px(10.0))
-        .pb(px(tokens::SPACE_2))
-        .px(px(tokens::SPACE_2))
-        .rounded(px(tokens::RADIUS_LG))
-        .text_color(p().ink)
-        .hover(move |s| s.bg(sunk))
+        .h(g(8.0))
+        .pl(g(2.0))
+        .pr(g(1.0))
+        .rounded(px(R_ROW))
+        .hover(move |s| s.bg(hover))
         .child(content);
     if checked {
-        row_button = row_button.bg(sunk);
-    }
-    if !st.selecting {
-        let more = icon_button(Icon::Ellipsis, t("moreActions"), Size::Sm, Some(msg(Msg::RowMenu(s.id.clone()))));
-        row_button = row_button.child(
-            div().absolute().top(px(6.0)).right(px(6.0)).invisible().group_hover(group, |s| s.visible()).child(more),
-        );
+        row_button = row_button.bg(hover);
     }
     row_button.into_any_element()
 }
 
-/// A row's checkbox in selection mode: a rounded square, ticked in ink.
+/// A row's checkbox in selection mode: a round tick, ink when on.
 fn tick(on: bool) -> El {
     let pal = p();
     let mut b = div()
@@ -570,29 +516,21 @@ fn tick(on: bool) -> El {
         .flex_none()
         .items_center()
         .justify_center()
-        .size(px(18.0))
-        .rounded(px(4.0))
-        .border(px(1.5))
-        .border_color(if on { pal.ink } else { pal.border_strong })
-        .bg(if on { pal.ink } else { pal.surface_raised });
+        .size(g(3.0))
+        .rounded(g(1.5))
+        .border_2()
+        .border_color(if on { pal.ink } else { pal.line })
+        .bg(if on { pal.ink } else { pal.surface });
     if on {
-        b = b.child(icon(Icon::Check, 12.0, pal.surface));
+        b = b.child(icon(Icon::Check, 16.0, pal.on_ink));
     }
     b.into_any_element()
 }
 
-/// While the list loads: three quiet blocks where rows will be.
+/// While the list loads: quiet panels where the days will be.
 fn loading() -> El {
-    let block = || div().w_full().h(px(86.0)).bg(p().surface_sunken).rounded(px(tokens::RADIUS_LG));
-    col()
-        .gap(px(tokens::SPACE_2))
-        .px(px(14.0))
-        .pb(px(14.0))
-        .pt(px(tokens::SPACE_3))
-        .child(block())
-        .child(block())
-        .child(block())
-        .into_any_element()
+    let block = || div().w_full().h(g(17.0)).bg(p().surface).rounded(px(R_PANEL));
+    col().gap(g(1.0)).px(g(2.0)).pt(g(4.0)).child(block()).child(block()).into_any_element()
 }
 
 fn empty_history() -> El {
@@ -603,14 +541,14 @@ fn empty_history() -> El {
         .flex_col()
         .items_center()
         .justify_center()
-        .gap(px(tokens::SPACE_3))
-        .pb(px(40.0))
-        .child(icon(Icon::History, 26.0, p().ink_muted))
-        .child(theme::t(t("historyEmpty"), tokens::BODY_SMALL, p().ink_muted))
+        .gap(g(2.0))
+        .pb(g(5.0))
+        .child(icon(Icon::History, 24.0, p().muted))
+        .child(theme::t(t("historyEmpty"), tokens::BODY, p().muted))
         .into_any_element()
 }
 
-/// Under the list while selecting: how many are chosen, then プロジェクト and 削除 for them.
+/// The bar while selecting: how many are chosen, then プロジェクト and 削除 for them.
 fn selection_bar(app: &App, shown: &[&Entry]) -> El {
     let n = shown.iter().filter(|e| app.history.selected.contains(&e.s.id)).count();
     let some = n > 0;
@@ -619,10 +557,11 @@ fn selection_bar(app: &App, shown: &[&Entry]) -> El {
     row()
         .w_full()
         .flex_none()
-        .gap(px(tokens::SPACE_2))
-        .py(px(10.0))
-        .px(px(18.0))
-        .child(line(tf("selectedCount", &[("n", &n)]), tokens::CAPTION, p().ink_muted).flex_1())
+        .h(g(10.0))
+        .px(g(2.0))
+        .pb(g(1.0))
+        .gap(g(1.0))
+        .child(line(tf("selectedCount", &[("n", &n)]), tokens::SMALL, p().muted).pl(g(2.0)).flex_1())
         .child(btn(t("project"), Variant::Secondary, Size::Lg, some.then(|| msg(Msg::ChosenProjectMenu))))
         .child(btn(t("delete"), delete, Size::Lg, some.then(|| msg(Msg::DeleteChosen))))
         .into_any_element()
@@ -630,6 +569,7 @@ fn selection_bar(app: &App, shown: &[&Entry]) -> El {
 
 #[cfg(test)]
 mod tests {
+    use chidori_core::session::model::SourceId;
     use chidori_core::session::recovery::Activity;
 
     use super::*;
@@ -718,13 +658,5 @@ mod tests {
         assert!(is_empty_session(&short));
         assert!(is_empty_session(&silent));
         assert!(!is_empty_session(&s("c", "2026-10-03T15:00:00+09:00", "C", "")));
-    }
-
-    #[test]
-    fn a_session_with_both_sides_draws_two() {
-        assert!(Entry::new(s("a", "2026-10-03T15:00:00+09:00", "A", "")).two);
-        let mut mic = s("b", "2026-10-03T15:00:00+09:00", "B", "");
-        mic.sources = vec![SourceId::Mic];
-        assert!(!Entry::new(mic).two);
     }
 }

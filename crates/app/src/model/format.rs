@@ -92,30 +92,6 @@ pub fn timer_text(ms: u64) -> String {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum Unit {
-    H,
-    M,
-    S,
-}
-
-/// A duration as numbers and units, for big numerals.
-pub fn duration_parts(ms: u64) -> Vec<(u64, Unit)> {
-    let s = (ms as f64 / 1000.0).round() as u64;
-    if s < 60 {
-        return vec![(s, Unit::S)];
-    }
-    let m = (s as f64 / 60.0).round() as u64;
-    if m < 60 {
-        return vec![(m, Unit::M)];
-    }
-    let mut parts = vec![(m / 60, Unit::H)];
-    if !m.is_multiple_of(60) {
-        parts.push((m % 60, Unit::M));
-    }
-    parts
-}
-
 /// The calendar day of a session start (`2026-10-03`), in the session's own offset.
 pub fn day_of(started_at: &str) -> &str {
     started_at.get(..10).unwrap_or(started_at)

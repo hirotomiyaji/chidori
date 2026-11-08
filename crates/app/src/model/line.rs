@@ -135,15 +135,6 @@ pub fn shape_of(items: &[TimelineItem], duration_ms: u64, n: usize) -> Shape {
     Shape { o: o.into_iter().map(|v| v.min(1.0)).collect(), m: m.into_iter().map(|v| v.min(1.0)).collect(), shots }
 }
 
-/// A shape from `SessionSummary.activity` (percentages).
-pub fn shape_from_activity(a: &chidori_core::session::recovery::Activity) -> Shape {
-    Shape {
-        o: a.others.iter().map(|v| *v as f32 / 100.0).collect(),
-        m: a.me.iter().map(|v| *v as f32 / 100.0).collect(),
-        shots: a.shots.iter().map(|s| *s as usize).collect(),
-    }
-}
-
 /// A finished session's shape: how loud each side was (`sound`) when the levels were kept, else
 /// when each side spoke; the screenshots always from its timeline, so deleting one shows.
 pub fn session_shape(
