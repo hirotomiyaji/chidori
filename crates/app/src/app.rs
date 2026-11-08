@@ -225,10 +225,11 @@ pub enum WinAction {
     ToggleVisible,
 }
 
-/// Opens the window and runs the app until it quits.
-pub fn run() {
+/// Opens the window and runs the app until it quits. `on_start` runs first, inside the app.
+pub fn run(on_start: impl FnOnce() + 'static) {
     let app = gpui_kit::application().with_assets(icons::Assets);
-    app.run(|cx| {
+    app.run(move |cx| {
+        on_start();
         gpui_kit::init(cx);
         let fonts = theme::FONTS.iter().map(|f| std::borrow::Cow::Borrowed(*f)).collect();
         if let Err(e) = cx.text_system().add_fonts(fonts) {
@@ -1115,11 +1116,12 @@ fn repeat(every: Duration, msg: impl Fn() -> Message + 'static, cx: &mut Context
     })
 }
 
-/// The native handle of the window, for what only Win32 can do.
+/// The native handle of the window (HWND, or NSView on macOS), for what only the OS can do.
 fn hwnd_of(window: &Window) -> Option<u64> {
     use raw_window_handle::{HasWindowHandle, RawWindowHandle};
     match HasWindowHandle::window_handle(window).ok()?.as_raw() {
         RawWindowHandle::Win32(h) => Some(h.hwnd.get() as u64),
+        RawWindowHandle::AppKit(h) => Some(h.ns_view.as_ptr() as usize as u64),
         _ => None,
     }
 }

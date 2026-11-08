@@ -56,7 +56,7 @@ pub fn report_error(app: &mut App, e: &AppError, fallback: &str) {
         ErrorCode::DiskFull => app.push_banner(banner(e.code, "diskFull")),
         ErrorCode::Network => app.toast(t("networkError"), Level::Error),
         ErrorCode::ModelChecksum => app.toast(t("checksumError"), Level::Error),
-        ErrorCode::AppLoopbackUnsupported => app.toast(t("win11Required"), Level::Error),
+        ErrorCode::AppLoopbackUnsupported => app.toast(crate::i18n::app_capture_unavailable(), Level::Error),
         ErrorCode::FileUnreadable => {
             let text = match e.message.as_str() {
                 "noAudio" => t("fileNoAudio"),
@@ -93,7 +93,12 @@ pub fn show_notice(app: &mut App, n: Notice) {
 pub fn run_notice_action(app: &mut App, command: &str) -> Task {
     match command {
         "open_mic_privacy" => {
-            let _ = open::that_detached("ms-settings:privacy-microphone");
+            let url = if cfg!(target_os = "macos") {
+                "x-apple.systempreferences:com.apple.preference.security?Privacy_Microphone"
+            } else {
+                "ms-settings:privacy-microphone"
+            };
+            let _ = open::that_detached(url);
             Task::none()
         }
         "switch_to_system" => {
@@ -164,7 +169,12 @@ impl Parent {
             let h = std::num::NonZeroIsize::new(hwnd as isize)?;
             Some(Parent(raw_window_handle::RawWindowHandle::Win32(raw_window_handle::Win32WindowHandle::new(h))))
         }
-        #[cfg(not(windows))]
+        #[cfg(target_os = "macos")]
+        {
+            let view = std::ptr::NonNull::new(hwnd as usize as *mut std::ffi::c_void)?;
+            Some(Parent(raw_window_handle::RawWindowHandle::AppKit(raw_window_handle::AppKitWindowHandle::new(view))))
+        }
+        #[cfg(not(any(windows, target_os = "macos")))]
         {
             let _ = hwnd;
             None
@@ -204,7 +214,11 @@ fn ask_folder(hwnd: Option<u64>) -> Option<PathBuf> {
 }
 
 fn dirs_download() -> Option<PathBuf> {
-    std::env::var_os("USERPROFILE").map(|h| PathBuf::from(h).join("Downloads")).filter(|d| d.is_dir())
+    // USERPROFILE on Windows, HOME on macOS.
+    std::env::var_os("USERPROFILE")
+        .or_else(|| std::env::var_os("HOME"))
+        .map(|h| PathBuf::from(h).join("Downloads"))
+        .filter(|d| d.is_dir())
 }
 
 fn file_name(path: &std::path::Path) -> String {

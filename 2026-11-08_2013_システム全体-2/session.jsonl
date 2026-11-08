@@ -1,0 +1,2 @@
+{"v":1,"type":"session_started","id":"01M6XDSRHAZBDE2ADN9TBMHG55","title":"システム全体","startedAt":"2026-11-08T20:13:20+09:00","sources":[{"id":"system","label":"相手"},{"id":"mic","label":"自分","device":"MacBook Airのマイク"}],"model":{"id":"kotoba-v2-q5","sha256":"4a3b92192b5d3578ff854a5876213e2e27af0c2d357492c2d14271e82c303658"},"language":"ja","gpu":true,"appVersion":"0.6.0"}
+{"v":1,"type":"audio_started","file":"audio/0001.ogg","startMs":0}

@@ -1,0 +1,35 @@
+{
+  "v": 1,
+  "id": "01M6XCA3SKZ5VN0HNG3WEYG0ZR",
+  "title": "システム全体",
+  "startedAt": "2026-11-08T19:47:19+09:00",
+  "endedAt": "2026-11-08T19:47:19+09:00",
+  "durationMs": 0,
+  "sources": [
+    {
+      "id": "system",
+      "label": "相手"
+    },
+    {
+      "id": "mic",
+      "label": "自分",
+      "device": "MacBook Airのマイク"
+    }
+  ],
+  "model": {
+    "id": "kotoba-v2-q5",
+    "sha256": "4a3b92192b5d3578ff854a5876213e2e27af0c2d357492c2d14271e82c303658"
+  },
+  "language": "ja",
+  "gpu": true,
+  "items": [],
+  "audio": [
+    {
+      "file": "audio/0001.ogg",
+      "startMs": 0
+    }
+  ],
+  "written": {
+    "transcript.md": "ed1dffbf474037688bbb12fcdee7613ef01298adbe684acefd3697ebf353231c"
+  }
+}

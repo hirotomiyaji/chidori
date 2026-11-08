@@ -146,7 +146,7 @@ fn options(app: &App) -> (Vec<El>, Option<usize>) {
             status_of(app, a),
             m(PickMsg::Pick(SourceMode::App, Some(a.root_pid))),
         );
-        list.push(if supported { o } else { with_tip(o, t("win11Required")).into_any_element() });
+        list.push(if supported { o } else { with_tip(o, crate::i18n::app_capture_unavailable()).into_any_element() });
     }
     if s.mode == SourceMode::System {
         chosen = Some(list.len());
@@ -203,7 +203,7 @@ pub fn picker(app: &App) -> El {
 
     let only = s.mode == SourceMode::Mic;
     let conversation = toggle_row(t("conversation"), only || s.include_mic, (!only).then(|| m(PickMsg::Conversation)));
-    let mut mics = vec![MicOption { id: None, name: t("defaultDevice") }];
+    let mut mics = vec![MicOption { id: None, name: crate::i18n::default_device() }];
     mics.extend(s.devices.iter().map(|d| MicOption { id: Some(d.id.clone()), name: d.name.clone() }));
     let current = mics.iter().find(|o| o.id == s.mic_device_id).cloned().or_else(|| mics.first().cloned());
     let mic = setting_row(t("srcMic"), select("mic", mics, current, |o: MicOption| m(PickMsg::Mic(o.id))));

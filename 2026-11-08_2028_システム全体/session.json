@@ -1,0 +1,496 @@
+{
+  "v": 1,
+  "id": "01M6XEP1RR1203PPRQ1C5WDKFJ",
+  "title": "システム全体",
+  "startedAt": "2026-11-08T20:28:47+09:00",
+  "endedAt": "2026-11-08T20:30:35+09:00",
+  "durationMs": 107863,
+  "sources": [
+    {
+      "id": "system",
+      "label": "相手"
+    },
+    {
+      "id": "mic",
+      "label": "自分",
+      "device": "MacBook Airのマイク"
+    }
+  ],
+  "model": {
+    "id": "kotoba-v2-q5",
+    "sha256": "4a3b92192b5d3578ff854a5876213e2e27af0c2d357492c2d14271e82c303658"
+  },
+  "language": "ja",
+  "gpu": true,
+  "items": [
+    {
+      "kind": "segment",
+      "id": "seg_000001",
+      "source": "system",
+      "tStartMs": 8752,
+      "tEndMs": 10208,
+      "text": "おはようございます",
+      "edited": false,
+      "utteranceId": "utt_000003"
+    },
+    {
+      "kind": "segment",
+      "id": "seg_000002",
+      "source": "mic",
+      "tStartMs": 10016,
+      "tEndMs": 11088,
+      "text": "ごめん",
+      "edited": false,
+      "utteranceId": "utt_000004"
+    },
+    {
+      "kind": "segment",
+      "id": "seg_000003",
+      "source": "mic",
+      "tStartMs": 24400,
+      "tEndMs": 25480,
+      "text": "ごめん",
+      "edited": false,
+      "utteranceId": "utt_000008"
+    },
+    {
+      "kind": "segment",
+      "id": "seg_000004",
+      "source": "system",
+      "tStartMs": 11648,
+      "tEndMs": 13648,
+      "text": "まずチャーハンから",
+      "edited": false,
+      "utteranceId": "utt_000006"
+    },
+    {
+      "kind": "segment",
+      "id": "seg_000005",
+      "source": "system",
+      "tStartMs": 13648,
+      "tEndMs": 16648,
+      "text": "うまっ",
+      "edited": false,
+      "utteranceId": "utt_000006"
+    },
+    {
+      "kind": "segment",
+      "id": "seg_000006",
+      "source": "system",
+      "tStartMs": 16648,
+      "tEndMs": 16648,
+      "text": "うまい",
+      "edited": false,
+      "utteranceId": "utt_000006"
+    },
+    {
+      "kind": "segment",
+      "id": "seg_000007",
+      "source": "system",
+      "tStartMs": 16648,
+      "tEndMs": 19648,
+      "text": "食べで作るか絶対うめえよ",
+      "edited": false,
+      "utteranceId": "utt_000006"
+    },
+    {
+      "kind": "segment",
+      "id": "seg_000008",
+      "source": "system",
+      "tStartMs": 19648,
+      "tEndMs": 19828,
+      "text": "ですね",
+      "edited": false,
+      "utteranceId": "utt_000006"
+    },
+    {
+      "kind": "segment",
+      "id": "seg_000009",
+      "source": "system",
+      "tStartMs": 19828,
+      "tEndMs": 23708,
+      "text": "シーンのスープとシークーズ",
+      "edited": false,
+      "utteranceId": "utt_000006"
+    },
+    {
+      "kind": "segment",
+      "id": "seg_000010",
+      "source": "mic",
+      "tStartMs": 25664,
+      "tEndMs": 27664,
+      "text": "ごめんかい",
+      "edited": false,
+      "utteranceId": "utt_000009"
+    },
+    {
+      "kind": "segment",
+      "id": "seg_000011",
+      "source": "system",
+      "tStartMs": 24944,
+      "tEndMs": 26944,
+      "text": "スープめっちゃいいわ",
+      "edited": false,
+      "utteranceId": "utt_000010"
+    },
+    {
+      "kind": "segment",
+      "id": "seg_000012",
+      "source": "system",
+      "tStartMs": 26944,
+      "tEndMs": 28944,
+      "text": "チャーハンはマジでチーフォーに合う",
+      "edited": false,
+      "utteranceId": "utt_000010"
+    },
+    {
+      "kind": "segment",
+      "id": "seg_000013",
+      "source": "system",
+      "tStartMs": 28944,
+      "tEndMs": 29944,
+      "text": "シューオンなって",
+      "edited": false,
+      "utteranceId": "utt_000010"
+    },
+    {
+      "kind": "segment",
+      "id": "seg_000014",
+      "source": "system",
+      "tStartMs": 29944,
+      "tEndMs": 31944,
+      "text": "これはめっちゃいいと思う",
+      "edited": false,
+      "utteranceId": "utt_000010"
+    },
+    {
+      "kind": "segment",
+      "id": "seg_000015",
+      "source": "system",
+      "tStartMs": 31944,
+      "tEndMs": 32944,
+      "text": "じゃ",
+      "edited": false,
+      "utteranceId": "utt_000010"
+    },
+    {
+      "kind": "segment",
+      "id": "seg_000016",
+      "source": "system",
+      "tStartMs": 32944,
+      "tEndMs": 34224,
+      "text": "若干",
+      "edited": false,
+      "utteranceId": "utt_000010"
+    },
+    {
+      "kind": "segment",
+      "id": "seg_000017",
+      "source": "system",
+      "tStartMs": 34224,
+      "tEndMs": 37944,
+      "text": "若干高く感じるかな?",
+      "edited": false,
+      "utteranceId": "utt_000010"
+    },
+    {
+      "kind": "segment",
+      "id": "seg_000018",
+      "source": "system",
+      "tStartMs": 37952,
+      "tEndMs": 41132,
+      "text": "こんなもんじゃないでも半々販って",
+      "edited": false,
+      "utteranceId": "utt_000011"
+    },
+    {
+      "kind": "segment",
+      "id": "seg_000019",
+      "source": "system",
+      "tStartMs": 41132,
+      "tEndMs": 41952,
+      "text": "これで",
+      "edited": false,
+      "utteranceId": "utt_000011"
+    },
+    {
+      "kind": "segment",
+      "id": "seg_000020",
+      "source": "system",
+      "tStartMs": 41952,
+      "tEndMs": 43832,
+      "text": "これで350円とかったらいいのかな",
+      "edited": false,
+      "utteranceId": "utt_000011"
+    },
+    {
+      "kind": "segment",
+      "id": "seg_000021",
+      "source": "system",
+      "tStartMs": 43832,
+      "tEndMs": 45732,
+      "text": "300円とかあっためっちゃうれしい",
+      "edited": false,
+      "utteranceId": "utt_000011"
+    },
+    {
+      "kind": "segment",
+      "id": "seg_000022",
+      "source": "system",
+      "tStartMs": 45732,
+      "tEndMs": 45952,
+      "text": "でも",
+      "edited": false,
+      "utteranceId": "utt_000011"
+    },
+    {
+      "kind": "segment",
+      "id": "seg_000023",
+      "source": "system",
+      "tStartMs": 45952,
+      "tEndMs": 47192,
+      "text": "400円は",
+      "edited": false,
+      "utteranceId": "utt_000011"
+    },
+    {
+      "kind": "segment",
+      "id": "seg_000024",
+      "source": "system",
+      "tStartMs": 47192,
+      "tEndMs": 51612,
+      "text": "税抜き350円ぐらいの最初判断",
+      "edited": false,
+      "utteranceId": "utt_000011"
+    },
+    {
+      "kind": "segment",
+      "id": "seg_000025",
+      "source": "system",
+      "tStartMs": 51616,
+      "tEndMs": 56296,
+      "text": "俺は全然400円でこれでも安いと思っちゃう",
+      "edited": false,
+      "utteranceId": "utt_000012"
+    },
+    {
+      "kind": "segment",
+      "id": "seg_000026",
+      "source": "system",
+      "tStartMs": 56296,
+      "tEndMs": 57976,
+      "text": "作る手間も知ってるから",
+      "edited": false,
+      "utteranceId": "utt_000012"
+    },
+    {
+      "kind": "segment",
+      "id": "seg_000027",
+      "source": "system",
+      "tStartMs": 57976,
+      "tEndMs": 59856,
+      "text": "そこら辺を考えると",
+      "edited": false,
+      "utteranceId": "utt_000012"
+    },
+    {
+      "kind": "segment",
+      "id": "seg_000028",
+      "source": "system",
+      "tStartMs": 59856,
+      "tEndMs": 62296,
+      "text": "結構なんだろうな俺は店寄りというか",
+      "edited": false,
+      "utteranceId": "utt_000012"
+    },
+    {
+      "kind": "segment",
+      "id": "seg_000029",
+      "source": "system",
+      "tStartMs": 62296,
+      "tEndMs": 65344,
+      "text": "だとなと思うけど",
+      "edited": false,
+      "utteranceId": "utt_000012"
+    },
+    {
+      "kind": "segment",
+      "id": "seg_000030",
+      "source": "mic",
+      "tStartMs": 59376,
+      "tEndMs": 72576,
+      "text": "ごめん",
+      "edited": false,
+      "utteranceId": "utt_000013"
+    },
+    {
+      "kind": "segment",
+      "id": "seg_000031",
+      "source": "system",
+      "tStartMs": 65344,
+      "tEndMs": 69424,
+      "text": "350円でしたら半チャーハン2個頼むだから700円やな",
+      "edited": false,
+      "utteranceId": "utt_000014"
+    },
+    {
+      "kind": "segment",
+      "id": "seg_000032",
+      "source": "system",
+      "tStartMs": 69424,
+      "tEndMs": 70344,
+      "text": "そう",
+      "edited": false,
+      "utteranceId": "utt_000014"
+    },
+    {
+      "kind": "segment",
+      "id": "seg_000033",
+      "source": "system",
+      "tStartMs": 70344,
+      "tEndMs": 74344,
+      "text": "レギュラーのチャーハンが800円だから",
+      "edited": false,
+      "utteranceId": "utt_000014"
+    },
+    {
+      "kind": "segment",
+      "id": "seg_000034",
+      "source": "system",
+      "tStartMs": 74344,
+      "tEndMs": 74344,
+      "text": "そうそう",
+      "edited": false,
+      "utteranceId": "utt_000014"
+    },
+    {
+      "kind": "segment",
+      "id": "seg_000035",
+      "source": "system",
+      "tStartMs": 74344,
+      "tEndMs": 78544,
+      "text": "半ならっていう理論は半分でいいの",
+      "edited": false,
+      "utteranceId": "utt_000014"
+    },
+    {
+      "kind": "segment",
+      "id": "seg_000036",
+      "source": "system",
+      "tStartMs": 78544,
+      "tEndMs": 80304,
+      "text": "税込み400円だから",
+      "edited": false,
+      "utteranceId": "utt_000015"
+    },
+    {
+      "kind": "segment",
+      "id": "seg_000037",
+      "source": "system",
+      "tStartMs": 80304,
+      "tEndMs": 82104,
+      "text": "税抜きやと3,000円",
+      "edited": false,
+      "utteranceId": "utt_000015"
+    },
+    {
+      "kind": "segment",
+      "id": "seg_000038",
+      "source": "system",
+      "tStartMs": 82104,
+      "tEndMs": 84544,
+      "text": "売りやすい",
+      "edited": false,
+      "utteranceId": "utt_000015"
+    },
+    {
+      "kind": "segment",
+      "id": "seg_000039",
+      "source": "system",
+      "tStartMs": 84544,
+      "tEndMs": 86184,
+      "text": "抜き落ちてますよ",
+      "edited": false,
+      "utteranceId": "utt_000015"
+    },
+    {
+      "kind": "segment",
+      "id": "seg_000040",
+      "source": "system",
+      "tStartMs": 86184,
+      "tEndMs": 87784,
+      "text": "でも税込みがあるんじゃないですか",
+      "edited": false,
+      "utteranceId": "utt_000015"
+    },
+    {
+      "kind": "segment",
+      "id": "seg_000041",
+      "source": "system",
+      "tStartMs": 87784,
+      "tEndMs": 87784,
+      "text": "そうそうそう",
+      "edited": false,
+      "utteranceId": "utt_000015"
+    },
+    {
+      "kind": "segment",
+      "id": "seg_000042",
+      "source": "system",
+      "tStartMs": 87784,
+      "tEndMs": 91204,
+      "text": "って考えたらすごい安く感じますね",
+      "edited": false,
+      "utteranceId": "utt_000015"
+    },
+    {
+      "kind": "segment",
+      "id": "seg_000043",
+      "source": "system",
+      "tStartMs": 91204,
+      "tEndMs": 92284,
+      "text": "350円",
+      "edited": false,
+      "utteranceId": "utt_000015"
+    },
+    {
+      "kind": "segment",
+      "id": "seg_000044",
+      "source": "system",
+      "tStartMs": 92288,
+      "tEndMs": 93708,
+      "text": "穴が間違ってます",
+      "edited": false,
+      "utteranceId": "utt_000017"
+    },
+    {
+      "kind": "segment",
+      "id": "seg_000045",
+      "source": "mic",
+      "tStartMs": 90976,
+      "tEndMs": 98064,
+      "text": "あゆうよ",
+      "edited": false,
+      "utteranceId": "utt_000016"
+    },
+    {
+      "kind": "segment",
+      "id": "seg_000046",
+      "source": "mic",
+      "tStartMs": 102592,
+      "tEndMs": 104752,
+      "text": "あいうえを",
+      "edited": false,
+      "utteranceId": "utt_000018"
+    }
+  ],
+  "audio": [
+    {
+      "file": "audio/0001.ogg",
+      "startMs": 0
+    }
+  ],
+  "written": {
+    "transcript.md": "99f567a727a16e8e3b28d1d7f5554eff48b249faf34dc5e6d1809074be516308"
+  }
+}

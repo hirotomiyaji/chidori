@@ -32,8 +32,8 @@ use crate::session::{paths, recovery};
 use crate::settings::{LastApp, Locale, ScreenshotTarget, Settings, SourceMode};
 use crate::state::AppState;
 
-#[cfg(windows)]
-use crate::audio::win::capture::{CaptureTarget, WasapiSource};
+#[cfg(any(windows, target_os = "macos"))]
+use crate::audio::source::CaptureTarget;
 
 pub const ME: &str = "自分";
 pub const OTHERS: &str = "相手";
@@ -75,7 +75,7 @@ pub struct ShotResponse {
     pub t_ms: u64,
 }
 
-#[cfg(windows)]
+#[cfg(any(windows, target_os = "macos"))]
 #[derive(Clone)]
 struct PlannedSource {
     id: SourceId,
@@ -97,7 +97,7 @@ pub struct Active {
     /// What is being recorded, as chosen; switching the source changes it (FR-17).
     config: SourceConfig,
     pub sources: RecordedSources,
-    #[cfg(windows)]
+    #[cfg(any(windows, target_os = "macos"))]
     plan: Vec<PlannedSource>,
     running: Vec<RunningSource>,
     status_rx: Receiver<SourceStatus>,
@@ -240,7 +240,7 @@ fn recorded_sources(config: &SourceConfig, app_name: &str) -> RecordedSources {
 }
 
 /// What a source choice captures, and how the session names it.
-#[cfg(windows)]
+#[cfg(any(windows, target_os = "macos"))]
 struct Planned {
     plan: Vec<PlannedSource>,
     infos: Vec<SourceInfo>,
@@ -248,12 +248,12 @@ struct Planned {
     app_root_pid: Option<u32>,
 }
 
-#[cfg(windows)]
+#[cfg(any(windows, target_os = "macos"))]
 fn plan_sources(config: &SourceConfig, app_name: &str) -> Planned {
     let mut plan: Vec<PlannedSource> = Vec::new();
     let mut infos: Vec<SourceInfo> = Vec::new();
     let mic_target = CaptureTarget::Mic { device_id: config.mic_device_id.clone() };
-    let mic_name = crate::audio::win::devices::mic_device_name(config.mic_device_id.clone());
+    let mic_name = crate::audio::mic_device_name(config.mic_device_id.clone());
     let mut app_root_pid = None;
     match config.mode {
         SourceMode::Mic => {
@@ -424,21 +424,21 @@ fn segmenter_config(settings: &Settings) -> SegmenterConfig {
 }
 
 /// A new session, or a saved one that a recording continues (FR-08).
-#[cfg(windows)]
+#[cfg(any(windows, target_os = "macos"))]
 enum Begin {
     New { title: Option<String> },
     Continue { session_id: String },
 }
 
 /// Starts a recording. Capture runs within a second; the model may still be loading.
-#[cfg(windows)]
+#[cfg(any(windows, target_os = "macos"))]
 pub fn start(app: &AppHandle, st: &AppState, config: SourceConfig, title: Option<String>) -> AppResult<StartResponse> {
     begin(app, st, config, Begin::New { title })
 }
 
 /// Records more onto a saved session (FR-08): its transcript, screenshots and sound carry on
 /// after its end, and clock times follow the new start.
-#[cfg(windows)]
+#[cfg(any(windows, target_os = "macos"))]
 pub fn continue_session(
     app: &AppHandle,
     st: &AppState,
@@ -448,7 +448,7 @@ pub fn continue_session(
     begin(app, st, config, Begin::Continue { session_id })
 }
 
-#[cfg(windows)]
+#[cfg(any(windows, target_os = "macos"))]
 fn begin(app: &AppHandle, st: &AppState, config: SourceConfig, how: Begin) -> AppResult<StartResponse> {
     if !matches!(&*st.recorder.lock(), Phase::Idle) {
         return Err(AppError::internal("already recording"));
@@ -542,8 +542,8 @@ fn begin(app: &AppHandle, st: &AppState, config: SourceConfig, how: Begin) -> Ap
         return Err(
             if msg.contains("privacy")
                 || err
-                    .downcast_ref::<crate::audio::win::capture::CaptureError>()
-                    .is_some_and(|e| matches!(e, crate::audio::win::capture::CaptureError::MicDenied))
+                    .downcast_ref::<crate::audio::source::CaptureError>()
+                    .is_some_and(|e| matches!(e, crate::audio::source::CaptureError::MicDenied))
             {
                 AppError::new(ErrorCode::MicDenied, msg)
             } else {
@@ -568,7 +568,7 @@ fn begin(app: &AppHandle, st: &AppState, config: SourceConfig, how: Begin) -> Ap
     Ok(response)
 }
 
-#[cfg(windows)]
+#[cfg(any(windows, target_os = "macos"))]
 fn start_sources(active: &mut Active, st: &AppState, start_ms: u64) -> Result<(), (SourceId, anyhow::Error)> {
     let sink: Arc<dyn JobSink> = st.worker.clone();
     for p in active.plan.clone() {
@@ -585,7 +585,7 @@ fn start_sources(active: &mut Active, st: &AppState, start_ms: u64) -> Result<()
         };
         let dsp = dsp::spawn(rx, params, active.ctx.clone(), sink.clone(), active.store.ids.clone(), st.levels.clone());
         let mut source: Box<dyn AudioSource> =
-            Box::new(WasapiSource::new(p.id, p.target.clone(), active.status_tx.clone()));
+            crate::audio::open_source(p.id, p.target.clone(), active.status_tx.clone());
         if let Err(err) = source.start(tx) {
             let _ = dsp.join();
             stop_sources(active);
@@ -931,7 +931,7 @@ pub fn pause(app: &AppHandle, st: &AppState) -> AppResult<()> {
     Ok(())
 }
 
-#[cfg(windows)]
+#[cfg(any(windows, target_os = "macos"))]
 pub fn resume(app: &AppHandle, st: &AppState) -> AppResult<()> {
     let mut rec = st.recorder.lock();
     let Phase::Recording(active) = &mut *rec else { return Err(AppError::internal("not recording")) };
@@ -954,7 +954,7 @@ pub fn resume(app: &AppHandle, st: &AppState) -> AppResult<()> {
 /// Switches what is recorded without stopping (FR-17): capture restarts on the new source at
 /// this moment, the session gains the new source's name, and the timeline gets a marker. While
 /// paused, the new source starts on resume. If it cannot start, the old one carries on.
-#[cfg(windows)]
+#[cfg(any(windows, target_os = "macos"))]
 pub fn switch_source(app: &AppHandle, st: &AppState, config: SourceConfig) -> AppResult<()> {
     check_source(&config)?;
     let locale = st.settings.read().locale;
@@ -1001,7 +1001,7 @@ pub fn switch_source(app: &AppHandle, st: &AppState, config: SourceConfig) -> Ap
 }
 
 /// 「システム全体に切り替える」 after the app-silence health check (section 7).
-#[cfg(windows)]
+#[cfg(any(windows, target_os = "macos"))]
 pub fn switch_to_system(app: &AppHandle, st: &AppState) -> AppResult<()> {
     let config = match &*st.recorder.lock() {
         Phase::Recording(a) if a.config.mode == SourceMode::App => {
@@ -1314,7 +1314,7 @@ pub fn spawn_ticker(app: AppHandle) {
 }
 
 /// Start with the last-used source (the Start/Stop hotkey while idle).
-#[cfg(windows)]
+#[cfg(any(windows, target_os = "macos"))]
 pub fn start_last_used(app: &AppHandle, st: &AppState) -> AppResult<StartResponse> {
     let s = st.settings.read().clone();
     let mut mode = s.source.mode;
@@ -1322,9 +1322,7 @@ pub fn start_last_used(app: &AppHandle, st: &AppState) -> AppResult<StartRespons
     if mode == SourceMode::App {
         match &s.source.app {
             Some(last) => {
-                let procs = crate::audio::win::process::snapshot();
-                let pid =
-                    crate::audio::win::process::find_root_by_exe(&procs, std::path::Path::new(&last.exe)).unwrap_or(0);
+                let pid = crate::audio::find_app_root(std::path::Path::new(&last.exe));
                 app_ref = Some(AppRef { exe: last.exe.clone(), root_pid: pid, name: Some(last.name.clone()) });
             }
             None => mode = SourceMode::System,
@@ -1344,7 +1342,7 @@ pub fn start_last_used(app: &AppHandle, st: &AppState) -> AppResult<StartRespons
 }
 
 /// Start/Stop toggle shared by the button, hotkey and tray.
-#[cfg(windows)]
+#[cfg(any(windows, target_os = "macos"))]
 pub fn toggle(app: &AppHandle, st: &AppState) {
     let phase = st.recorder.lock().ui_state();
     let result = match phase {
@@ -1371,7 +1369,13 @@ mod tests {
 
     fn config(mode: SourceMode, include_mic: bool) -> SourceConfig {
         let app = (mode == SourceMode::App).then(|| AppRef {
-            exe: r"C:\Program Files\Zoom\bin\Zoom.exe".into(),
+            // A path this OS splits, so the name comes from its file stem.
+            exe: if cfg!(windows) {
+                r"C:\Program Files\Zoom\bin\Zoom.exe"
+            } else {
+                "/Applications/Zoom.app/Contents/MacOS/Zoom"
+            }
+            .into(),
             root_pid: 0,
             name: None,
         });

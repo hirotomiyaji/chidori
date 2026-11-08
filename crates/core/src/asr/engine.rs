@@ -27,7 +27,7 @@ pub fn install_logging_hooks() {
 }
 
 pub fn gpu_compiled() -> bool {
-    cfg!(any(feature = "gpu-vulkan", feature = "gpu-cuda"))
+    cfg!(any(feature = "gpu-vulkan", feature = "gpu-cuda", feature = "gpu-metal"))
 }
 
 /// Name of the GPU whisper.cpp will use (device 0), if any.
@@ -40,7 +40,11 @@ pub fn gpu_device_name() -> Option<String> {
     {
         Some("CUDA".to_string())
     }
-    #[cfg(not(any(feature = "gpu-vulkan", feature = "gpu-cuda")))]
+    #[cfg(all(feature = "gpu-metal", not(any(feature = "gpu-vulkan", feature = "gpu-cuda"))))]
+    {
+        Some("Apple GPU (Metal)".to_string())
+    }
+    #[cfg(not(any(feature = "gpu-vulkan", feature = "gpu-cuda", feature = "gpu-metal")))]
     {
         None
     }

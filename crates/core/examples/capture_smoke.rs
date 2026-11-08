@@ -3,8 +3,7 @@
 
 use std::time::{Duration, Instant};
 
-use chidori_core::audio::source::AudioSource;
-use chidori_core::audio::win::capture::{CaptureTarget, WasapiSource};
+use chidori_core::audio::source::CaptureTarget;
 use chidori_core::platform;
 use chidori_core::session::model::SourceId;
 
@@ -21,7 +20,7 @@ fn main() -> anyhow::Result<()> {
     let secs: u64 = rest.first().and_then(|s| s.parse().ok()).unwrap_or(3);
     let (status_tx, status_rx) = crossbeam_channel::unbounded();
     let (tx, rx) = crossbeam_channel::bounded(256);
-    let mut src = WasapiSource::new(id, target, status_tx);
+    let mut src = chidori_core::audio::open_source(id, target, status_tx);
     let t0 = platform::qpc_now_100ns();
     let started = Instant::now();
     src.start(tx)?;

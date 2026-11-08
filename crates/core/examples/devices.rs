@@ -1,13 +1,11 @@
 //! Lists capture devices and the app picker: `cargo run --example devices`.
 
-use chidori_core::audio::source::AudioAppLister;
-
 fn main() -> anyhow::Result<()> {
-    for d in chidori_core::audio::win::devices::list_mic_devices()? {
+    for d in chidori_core::audio::list_mic_devices()? {
         println!("mic: {}{} [{}]", d.name, if d.is_default { " (default)" } else { "" }, d.id);
     }
     let t = std::time::Instant::now();
-    let apps = chidori_core::audio::win::sessions::WinAudioAppLister.list()?;
+    let apps = chidori_core::ops::list_audio_apps()?;
     println!("listed {} apps in {:?}", apps.len(), t.elapsed());
     for a in apps {
         println!(

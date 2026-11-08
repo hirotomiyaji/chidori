@@ -16,6 +16,8 @@ default = []
 gpu-vulkan = ["whisper-rs/vulkan"]
 # Local NVIDIA builds only (needs the CUDA toolkit).
 gpu-cuda = ["whisper-rs/cuda"]
+# The Mac build: Whisper on the Apple GPU.
+gpu-metal = ["whisper-rs/metal"]
 
 [dependencies]
 serde = { version = "1.0.229", features = ["derive"] }
@@ -56,10 +58,16 @@ rubato = "=5.0.1"
 audioadapter-buffers = "5.2.0"
 earshot = "=1.2.2"
 
-[target.'cfg(windows)'.dependencies]
-wasapi = "=0.25.0"
+[target.'cfg(any(windows, target_os = "macos"))'.dependencies]
 xcap = "=0.9.8"
 sysinfo = { version = "0.39.6", default-features = false, features = ["system"] }
+
+# Mic and system audio on macOS (system audio through a Core Audio process tap, macOS 14.6+).
+[target.'cfg(target_os = "macos")'.dependencies]
+cpal = "=0.18.2"
+
+[target.'cfg(windows)'.dependencies]
+wasapi = "=0.25.0"
 windows = { version = "0.62.2", features = [
   "Win32_Foundation",
   "Win32_Globalization",
