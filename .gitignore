@@ -31,6 +31,8 @@ models/*.gguf
 
 # ---- Local session output / recordings ----
 sessions/
+# Recordings saved into a checkout by a dev build (folders are named by date)
+/[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]_*/
 *.wav.local
 *.jsonl.local
 

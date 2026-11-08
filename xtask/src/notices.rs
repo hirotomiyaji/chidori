@@ -2,7 +2,7 @@
 //! linked into the exe, the whisper.cpp sources built from whisper-rs-sys, libopus built from
 //! opusic-sys, and the fonts and icons the UI embeds. MIT, BSD, Apache-2.0 and the OFL ask for
 //! their notices to travel with the binary. Typst's LICENSE and NOTICE and the Vulkan loader's
-//! licence ship as their own files in the same licenses\ folder.
+//! licence ship as their own files in the same licenses\ folder (the Vulkan one on Windows only).
 
 use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 use std::path::{Path, PathBuf};
@@ -38,12 +38,22 @@ fn license_files(dir: &Path) -> Vec<PathBuf> {
     files
 }
 
-/// Crates linked into the exe of the Windows GPU build. Build scripts and proc macros only run
-/// while compiling, so crates that only they depend on are left out.
+/// The build the installer ships on this OS: its GPU feature and target, as `cargo metadata` takes them.
+fn shipped_build() -> (&'static str, &'static str) {
+    if cfg!(target_os = "macos") {
+        ("gpu-metal", "aarch64-apple-darwin")
+    } else {
+        ("gpu-vulkan", "x86_64-pc-windows-msvc")
+    }
+}
+
+/// Crates linked into the exe of the GPU build this OS ships. Build scripts and proc macros only
+/// run while compiling, so crates that only they depend on are left out.
 fn rust_crates(root: &Path) -> Result<Vec<Value>> {
+    let (feature, platform) = shipped_build();
     let out = Command::new(env!("CARGO"))
-        .args(["metadata", "--format-version", "1", "--locked", "--features", "gpu-vulkan"])
-        .args(["--filter-platform", "x86_64-pc-windows-msvc", "--manifest-path"])
+        .args(["metadata", "--format-version", "1", "--locked", "--features", feature])
+        .args(["--filter-platform", platform, "--manifest-path"])
         .arg(root.join("crates").join("app").join("Cargo.toml"))
         .output()
         .map_err(|e| format!("cargo metadata: {e}"))?;
@@ -198,8 +208,8 @@ pub fn notices(root: &Path) -> Result<String> {
 ================================
 
 Chidori itself is under the MIT licence. Its installer also contains the software below; each
-licence text is followed by the packages it covers. Typst's licence and NOTICE and the Vulkan
-loader's licence are the other files in this folder.";
+licence text is followed by the packages it covers. Typst's licence and NOTICE (and on Windows
+the Vulkan loader's licence) are the other files in this folder.";
     let ui = vec![
         Entry {
             label: "Zen Kaku Gothic New".into(),

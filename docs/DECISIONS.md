@@ -603,10 +603,25 @@ found a reason to deviate.
   app (with its helper processes) is the next step.
 - **The window** is hidden from captures with `NSWindow.sharingType = .none`, hidden to the
   menu bar with `orderOut`, and kept on top with the floating level. Notifications go through
-  `osascript` (no bundle or permission needed). The single-instance check is Windows-only: a
-  `.app` is already single-instance through Launch Services.
+  `osascript` (no bundle or permission needed). A second launch hands over to the running copy
+  through a Unix socket in the user's temp folder, as a named mutex and event do on Windows; Launch
+  Services already keeps a `.app` to one copy, but a binary started from a terminal is not.
 - **Display language** is the first of `defaults read -g AppleLanguages`.
 - **Kikitori migration** is Windows-only: Kikitori never shipped for macOS.
+- **Packaging (step 4).** `cargo xtask dist` on a Mac builds the Metal app, has cargo-packager
+  make `Chidori.app` (Info.plist keys from `crates/app/macos/Info.plist`), signs it ad hoc and
+  packs `Chidori_<version>_aarch64.dmg` with `hdiutil`. Apple Silicon only, macOS 14.6+. Ad hoc
+  because a Developer ID costs $99 a year: a downloaded copy opens through System Settings →
+  Privacy & Security → Open Anyway, and macOS may ask for the mic and system audio again after
+  an update (the signature changes with every build). A Developer ID and notarization fix both.
+  No hardened runtime, which would need entitlements for the mic. Bundled files live in
+  `Contents/Resources`, which `host::Paths` reads on macOS.
+- **Updates on macOS** use the same daily `latest.json` check, but the banner's button opens the
+  release page to download the `.dmg`: there is no installer the app could run, and replacing a
+  running bundle by hand is more than the app needs. `latest.json` stays Windows-only.
+- **CI and releases.** `ci.yml` adds a `macos-latest` job (clippy with `gpu-metal`, tests); the
+  repo is public, so its minutes are free. `release.yml` builds the Windows installer and the
+  `.dmg` on their own runners and drafts one release with both.
 
 ## Test assets
 

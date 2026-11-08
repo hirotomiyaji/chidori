@@ -21,7 +21,7 @@ pub struct Paths {
     /// Models (`%LOCALAPPDATA%\dev.yusai.chidori`).
     pub local_data: PathBuf,
     pub logs: PathBuf,
-    /// Files shipped next to the exe (the benchmark clip, licences).
+    /// Files shipped next to the exe, or in a Mac bundle's Resources (the benchmark clip, licences).
     pub resources: PathBuf,
     pub documents: PathBuf,
 }
@@ -30,8 +30,10 @@ impl Paths {
     pub fn system() -> Self {
         let config = dirs::config_dir().unwrap_or_default().join(IDENTIFIER);
         let local_data = dirs::data_local_dir().unwrap_or_default().join(IDENTIFIER);
-        let resources =
-            std::env::current_exe().ok().and_then(|exe| exe.parent().map(PathBuf::from)).unwrap_or_default();
+        let exe_dir = std::env::current_exe().ok().and_then(|exe| exe.parent().map(PathBuf::from)).unwrap_or_default();
+        // In a macOS bundle the exe is in Contents/MacOS and its files in Contents/Resources.
+        let bundled = exe_dir.ends_with("Contents/MacOS").then(|| exe_dir.with_file_name("Resources"));
+        let resources = bundled.filter(|r| cfg!(target_os = "macos") && r.is_dir()).unwrap_or(exe_dir);
         Self {
             logs: local_data.join("logs"),
             config,

@@ -4,6 +4,12 @@ All notable changes are listed here. Versions follow [SemVer](https://semver.org
 
 ## [Unreleased]
 
+## [0.8.0] - 2026-11-08
+
+### Added
+
+- A Mac version, in early testing: `Chidori_…_aarch64.dmg` for Apple Silicon Macs on macOS 14.6 or later. It records the microphone and all system audio and transcribes on the Mac's GPU; recording a single app, and transcribing files other than WAV and Opus, come later. It isn't notarized yet, so the first launch goes through System Settings → Privacy & Security → Open Anyway, and its update banner opens the download page.
+
 ## [0.7.0] - 2026-11-08
 
 ### Changed

@@ -45,3 +45,24 @@ jobs:
       - name: cargo test
         # CPU build: the runner has no GPU driver.
         run: cargo test --workspace
+
+  macos:
+    # Apple Silicon. The repo is public, so these minutes are free.
+    runs-on: macos-latest
+    env:
+      # .cargo/config.toml's [env] carries MSVC flags for whisper.cpp; these win over it.
+      CMAKE_C_FLAGS_RELEASE: "-O3 -DNDEBUG"
+      CMAKE_CXX_FLAGS_RELEASE: "-O3 -DNDEBUG"
+      CMAKE_C_FLAGS_RELWITHDEBINFO: "-O2 -g -DNDEBUG"
+      CMAKE_CXX_FLAGS_RELWITHDEBINFO: "-O2 -g -DNDEBUG"
+    steps:
+      - uses: actions/checkout@v7.0.1
+      - uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: 1.98.1
+          components: clippy
+      - uses: Swatinem/rust-cache@v2.9.2
+      - name: cargo clippy (the Metal build that ships)
+        run: cargo clippy --workspace --all-targets --features chidori/gpu-metal -- -D warnings
+      - name: cargo test
+        run: cargo test --workspace

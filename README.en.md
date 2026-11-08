@@ -22,6 +22,7 @@ Afterwards, save it as Markdown or PDF, or use Copy for AI agents to ask an AI f
 
 - Your audio never goes to the internet: transcription runs on your PC with Whisper.
 - Runs on Windows 11 (64-bit). It also runs on Windows 10 22H2, but there it can't record a single app, only all system audio or the microphone.
+- A Mac version (Apple Silicon, macOS 14.6 or later) is in early testing: it records the microphone and all system audio, not yet a single app.
 - Disk space: 200 MB to 1.1 GB per model (the standard one is about 570 MB).
 - Made for Japanese first, and in English too: unless Windows is set to Japanese, the app starts in English. Japanese and English speech are transcribed as spoken, never translated.
 
@@ -33,6 +34,15 @@ Afterwards, save it as Markdown or PDF, or use Copy for AI agents to ask an AI f
 3. If a blue "**Windows protected your PC**" screen appears, click **More info**, then **Run anyway**.
    - It appears because the installer isn't code-signed yet. Chidori just lacks a signature: it doesn't change your PC's settings or ask for administrator rights.
 4. Follow the installer. No administrator rights are needed (it installs for your user only).
+
+### Mac (early testing)
+
+1. Download `Chidori_x.y.z_aarch64.dmg` from [Releases](../../releases/latest), open it, and drag **Chidori** onto **Applications**.
+2. Open Chidori. When macOS says it can't check the app for malware, click **Done**, then go to **System Settings → Privacy & Security** and click **Open Anyway** at the bottom (the app isn't notarized by Apple yet).
+3. The first recording asks for the microphone, and **All system audio** asks to record the Mac's sound. Allow both.
+4. When an update is out, its banner opens the download page: download the new `.dmg` and drag it over the old copy. macOS may ask for the permissions again.
+
+On a Mac, transcribing a file works for WAV and Opus only for now.
 
 ## First run
 
@@ -96,11 +106,12 @@ All Rust: the UI is [GPUI](https://www.gpui.rs) through `gpui-kit` (`crates/app`
 
 ### Prerequisites (macOS, Apple Silicon, in progress)
 
-The Mac port ([issue 6](https://github.com/yusai-apps/chidori/issues/6)) records the mic and the whole system's sound (macOS 14.6+); one app's sound, packaging and updates are not done yet.
+The Mac port ([issue 6](https://github.com/yusai-apps/chidori/issues/6)) records the mic and the whole system's sound (macOS 14.6+); one app's sound is not done yet.
 
 - Xcode, Rust (the same toolchain version), and CMake (`brew install rustup cmake`, then `rustup toolchain install <version> --component rustfmt,clippy`)
 - Before any cargo command: `. scripts/macos-env.sh`. It gives whisper.cpp clang's flags in place of the MSVC ones in `.cargo/config.toml`, and puts Homebrew's rustup on `PATH`.
 - `cargo run -p chidori --features gpu-metal` is the Metal build. The first recording asks for the microphone, and システム全体 asks for system audio recording, both for the app that launched it (your terminal, for a dev build).
+- `cargo xtask dist` (after `cargo install cargo-packager --locked`) builds `Chidori.app` and the `.dmg` in `target/dist`, as the release does. Open the `.app` from there to get the permission prompts in Chidori's own name.
 
 ### Run and test
 

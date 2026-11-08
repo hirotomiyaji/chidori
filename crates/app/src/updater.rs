@@ -50,9 +50,15 @@ fn while_recording() -> AppError {
 }
 
 /// Downloads the update the launch check found, checks its signature, and runs the installer in
-/// passive mode; the installer closes the app and starts it again (`/R`). Blocking.
+/// passive mode; the installer closes the app and starts it again (`/R`). Blocking. On macOS it
+/// opens the release page instead.
 pub fn install(app: &AppHandle) -> AppResult<()> {
     let release = FOUND.lock().clone().ok_or_else(|| AppError::internal("no update found"))?;
+    // A Mac update is a .dmg the user drags in: open its page.
+    if cfg!(target_os = "macos") {
+        return open::that_detached(&release.url)
+            .map_err(|e| AppError::internal(format!("opening {}: {e}", release.url)));
+    }
     if !matches!(*app.state().recorder.lock(), Phase::Idle) {
         return Err(while_recording());
     }
