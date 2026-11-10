@@ -45,9 +45,11 @@ cargo clippy --workspace --all-targets --features chidori/gpu-vulkan -- -D warni
 cargo test --workspace
 ```
 
-To check a screen, run the app: GPUI has no headless renderer, so there are no PNG previews.
-`crate::preview::app()` (`crates/app/src/preview.rs`) builds the real `App` on a temporary core
-for tests of a screen's logic.
+To check a screen or try a change end to end, drive the app (`docs/DRIVE.md`):
+`cargo xtask drive start` runs the real app out of sight on folders of its own, and
+`cargo xtask drive shot`, `click`, `type`, `state`... look at it and use it without the mouse, with
+sound files in place of the devices. `crate::preview::app()` (`crates/app/src/preview.rs`) builds
+the real `App` on a temporary core for unit tests of a screen's logic.
 
 The streaming accuracy tests in `crates/core/tests/pipeline.rs` are `#[ignore]`d; its header and
 `tests/fixtures/README.md` explain how to build the fixtures and run them. Partial (grey) text

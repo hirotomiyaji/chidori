@@ -40,6 +40,21 @@ fn cut(app: &AppHandle) {
     events::notice(app, Notice::new(NoticeLevel::Info, "cut", message).toast());
 }
 
+/// What a press of the hotkey `name` does, without the keyboard: a driven test run registers none.
+#[cfg(feature = "drive")]
+pub fn press(name: &str, app: &AppHandle) -> bool {
+    let action: Action = match name {
+        "toggle" => toggle,
+        "screenshot" => screenshot,
+        "mark" => mark,
+        "cut" => cut,
+        _ => return false,
+    };
+    let app = app.clone();
+    std::thread::spawn(move || action(&app));
+    true
+}
+
 thread_local! {
     static MANAGER: RefCell<Option<GlobalHotKeyManager>> = const { RefCell::new(None) };
     static REGISTERED: RefCell<Vec<HotKey>> = const { RefCell::new(Vec::new()) };

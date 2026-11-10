@@ -3,6 +3,7 @@
 //!   cargo xtask dist        the release installer, as CI builds it (Windows: Vulkan build, NSIS;
 //!                           macOS: Metal build, Chidori.app in a .dmg)
 //!   cargo xtask notices     only writes the third-party licence list
+//!   cargo xtask drive ...   a test run of the app driven by commands (drive.rs, docs/DRIVE.md)
 //!
 //! On Windows `dist` builds the app with the Vulkan backend, bundles Khronos' Vulkan loader next to
 //! the exe (so the app starts on PCs without a GPU driver and falls back to the CPU), writes the
@@ -13,6 +14,7 @@
 //! it into a `.dmg` with `hdiutil`. The Mac updater only points at the release page, so nothing
 //! there is signed with the update key.
 
+mod drive;
 mod notices;
 
 use std::path::{Path, PathBuf};
@@ -33,7 +35,8 @@ fn main() -> ExitCode {
     let result = match args.first().map(String::as_str) {
         Some("dist") => dist(),
         Some("notices") => notices::write(&root()).map(|p| println!("Wrote {}", p.display())),
-        _ => Err("usage: cargo xtask dist | notices".into()),
+        Some("drive") => drive::drive(&args[1..]),
+        _ => Err("usage: cargo xtask dist | notices | drive".into()),
     };
     match result {
         Ok(()) => ExitCode::SUCCESS,

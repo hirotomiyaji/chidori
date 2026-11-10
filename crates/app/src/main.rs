@@ -7,6 +7,29 @@
 mod actions;
 mod app;
 mod bridge;
+#[cfg(feature = "drive")]
+mod drive;
+/// Without the `drive` feature nothing drives the app (`drive.rs`).
+#[cfg(not(feature = "drive"))]
+mod drive {
+    pub fn on() -> bool {
+        false
+    }
+
+    pub fn visible() -> bool {
+        true
+    }
+
+    pub fn paths() -> Option<chidori_core::host::Paths> {
+        None
+    }
+
+    pub fn seed(_: &chidori_core::host::AppHandle) {}
+
+    pub fn popup(_: &[crate::native::menu::Item]) -> bool {
+        false
+    }
+}
 mod i18n;
 mod icons;
 mod jello;
@@ -36,14 +59,16 @@ fn main() {
     asr::engine::disable_vulkan_implicit_layers();
     net::ensure_crypto_provider();
     bridge::init();
+    // A driven test run keeps to its own folders and runs beside the app itself.
+    let driven = drive::paths();
     // A second launch shows the running window and leaves (FR-91).
-    if !native::window::single_instance() {
+    if driven.is_none() && !native::window::single_instance() {
         return;
     }
     // Before anything opens a file in the app's folders.
-    let migrated = migrate::app_folders();
+    let migrated = if driven.is_none() { migrate::app_folders() } else { Vec::new() };
 
-    let mut paths = Paths::system();
+    let mut paths = driven.unwrap_or_else(Paths::system);
     // An installed copy has its resources beside the exe; a dev build reads them from the crate.
     if cfg!(debug_assertions) && !paths.resources.join(chidori_core::models::benchmark::CLIP).exists() {
         paths.resources = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"));
@@ -67,6 +92,7 @@ fn main() {
     let _stop_worker = StopWorker(worker.clone());
     core.manage(AppState::new(&core, worker));
     bridge::set_core(core.clone());
+    drive::seed(&core);
     let st = core.state();
     state::check_gpu_crash_marker(&core, st);
     let locale = st.settings.read().locale;
@@ -75,6 +101,10 @@ fn main() {
     let native = {
         let core = core.clone();
         move || {
+            // A driven run has no tray and takes no hotkeys from the app itself.
+            if drive::on() {
+                return;
+            }
             native::menu::init();
             native::tray::create(locale);
             native::hotkeys::init();
@@ -93,7 +123,9 @@ fn main() {
         tracing::error!("CPU lacks AVX2; transcription is unavailable");
         events::notice(&core, Notice::new(NoticeLevel::Error, "E_INTERNAL", "cpuUnsupported"));
     }
-    updater::check_on_launch(&core);
+    if !drive::on() {
+        updater::check_on_launch(&core);
+    }
 
     #[cfg(target_os = "macos")]
     app::run(native);

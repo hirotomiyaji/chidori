@@ -34,6 +34,8 @@ pub struct AppState {
     pub downloads: Mutex<HashMap<String, watch::Sender<bool>>>,
     pub last_shot: Mutex<Option<Instant>>,
     pub quit_after_finish: AtomicBool,
+    /// Set by a test run of the app: recordings hear these files, not the devices.
+    pub stand_in: Mutex<Option<crate::audio::StandIn>>,
     /// Serializes saving `settings.json`, so the last save always writes the newest settings.
     persisting: Mutex<()>,
     #[cfg(any(windows, target_os = "macos"))]
@@ -73,6 +75,7 @@ impl AppState {
             downloads: Mutex::new(HashMap::new()),
             last_shot: Mutex::new(None),
             quit_after_finish: AtomicBool::new(false),
+            stand_in: Mutex::new(None),
             persisting: Mutex::new(()),
             #[cfg(any(windows, target_os = "macos"))]
             capturer: crate::screenshot::XcapCapturer,

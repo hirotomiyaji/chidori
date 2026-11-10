@@ -2,6 +2,10 @@
 //! the recording went on in the tray).
 
 pub fn show(text: &str) {
+    // A driven test run says nothing on the real desktop.
+    if crate::drive::on() {
+        return;
+    }
     #[cfg(windows)]
     {
         use tauri_winrt_notification::Toast;

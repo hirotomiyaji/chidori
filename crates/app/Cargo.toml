@@ -15,6 +15,9 @@ gpu-vulkan = ["chidori-core/gpu-vulkan"]
 gpu-cuda = ["chidori-core/gpu-cuda"]
 # The Mac build: Whisper on the Apple GPU.
 gpu-metal = ["chidori-core/gpu-metal"]
+# Test builds only: the app takes its input from a command file and draws its window to PNG
+# (docs/DRIVE.md). Never in a release.
+drive = ["dep:gpui-pre-platform"]
 
 [dependencies]
 chidori-core = { path = "../core" }
@@ -22,6 +25,9 @@ chidori-core = { path = "../core" }
 # The UI is GPUI (Zed's), through GPUI Kit, which pins a GPUI snapshot and adds the text inputs
 # and tooltips GPUI leaves to apps. Drift-prone: pinned with `=`.
 gpui-kit = "=0.9.0"
+# Only for `drive`: its test-support lets a window draw itself to an image. (Through GPUI Kit's own
+# test-support feature the lockfile would have to resolve its optional second GPUI.)
+gpui-pre-platform = { version = "=0.3.11", optional = true, features = ["test-support"] }
 # Strokes with round caps and joins for the session's line; the version GPUI tessellates with.
 lyon_tessellation = "1.0.23"
 futures = "0.3.31"

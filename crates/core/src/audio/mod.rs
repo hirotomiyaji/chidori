@@ -12,10 +12,57 @@ pub mod source;
 #[cfg(windows)]
 pub mod win;
 
+use std::path::PathBuf;
+
 use crossbeam_channel::Sender;
 
 use crate::session::model::SourceId;
-use source::{AudioSource, CaptureTarget, Device, SourceStatus};
+use source::{AudioSource, CaptureTarget, Device, RawChunk, SourceStatus};
+
+/// Sound files that play as a recording's sources in place of the devices, at the speed they
+/// were recorded, so a test run of the app hears the same thing every time and never the room.
+/// A side without a file is silent.
+#[derive(Debug, Clone, Default, PartialEq)]
+pub struct StandIn {
+    /// Heard as 相手 (the app or the system).
+    pub others: Option<PathBuf>,
+    /// Heard as 自分 (the mic).
+    pub me: Option<PathBuf>,
+}
+
+impl StandIn {
+    pub fn source(&self, id: SourceId) -> Box<dyn AudioSource> {
+        let file = if id == SourceId::Mic { &self.me } else { &self.others };
+        match file {
+            Some(path) => {
+                Box::new(file_source::FileSource::new(id, path.clone(), None, crate::platform::qpc_now_100ns(), 1.0))
+            }
+            None => Box::new(Silence { id, tx: None }),
+        }
+    }
+}
+
+/// A source that never sends: a side of a `StandIn` without a file.
+struct Silence {
+    id: SourceId,
+    /// Held so the DSP thread waits as it does on a quiet device.
+    tx: Option<Sender<RawChunk>>,
+}
+
+impl AudioSource for Silence {
+    fn id(&self) -> SourceId {
+        self.id
+    }
+
+    fn start(&mut self, tx: Sender<RawChunk>) -> anyhow::Result<()> {
+        self.tx = Some(tx);
+        Ok(())
+    }
+
+    fn stop(&mut self) {
+        self.tx = None;
+    }
+}
 
 /// This OS's capture stream for a target (section 6).
 #[cfg(any(windows, target_os = "macos"))]
