@@ -229,6 +229,10 @@ found a reason to deviate.
   is left over by a recording that continued the session and then crashed (FR-08), and an edit
   writes one for a session that never stopped. 履歴 still reads the quicker snapshot when the
   log's last recording stopped.
+- **Recovery is offered one session at a time**; 後で (or Escape) puts off all of them until the
+  next launch, since the cards look alike and one press per session read as a button that did
+  nothing. The dialog says how many more wait. Put-off sessions stay 要復元 in 履歴, where
+  ⋯ › 復元 recovers one.
 - **Continuing a file's session** keeps the file's times as places in the file and gives the
   continued recording clock times, as any recording has.
 - **Start and Stop pressed twice** (a double click, a hotkey and the tray) start or stop once:
@@ -386,7 +390,9 @@ found a reason to deviate.
   gone from the bar; the app and tray icons stay the kamon kit's until Jello has an icon tool),
   録音 · 履歴 · 設定 as text tabs with the current one on a white pill, 録音 with a small red dot
   while recording elsewhere (it leads back to the recording), then always on top, shrink,
-  minimize and close as muted icons. The setup wizard shows no tabs. No bottom tabs.
+  minimize and close as muted icons. The setup wizard shows no tabs. No bottom tabs. When the
+  window is too narrow for all of it (measured from the labels, since English's are wider), 「Chidori」
+  gives way first, then the tabs tighten, so the window buttons never leave the window.
 - **The start screen** is two labelled white panels. 「相手（聞き取るアプリ）」 with a refresh
   button lists the apps (those with an audio session first), then システム全体 and マイクだけ, as
   64 px rows of the name over 音が出ています or 無音, the chosen one bold with a check and a
@@ -408,6 +414,9 @@ found a reason to deviate.
   and could not show a silent mic. The bar under the transcript (80 high) holds the camera and
   its menu, the star, the cut, then pause and the ink 停止 pill with its red square; while
   finishing, 仕上げ中 with a spinner.
+- **The card floats over the transcript** (recording, a finished session, one opened from 履歴):
+  the lines start below it and scroll up behind it, so only the card's own ground hides them. In
+  a strip of its own the card cut them along a straight edge, under its rounded corners too.
 - **Switching the source while recording is a menu** (the same as the compact window's): the
   source choices and 「会話として録音」, each switching at once with a toast. It is drawn where
   it fits and native where it doesn't (see "Menus are drawn by the app").
@@ -451,8 +460,8 @@ found a reason to deviate.
   project gets a colour no other project uses. A session joins a project from the chip on its
   card, History's row menu or 選択, each a menu ending in 「新しいプロジェクト…」. A new
   recording starts in no project.
-- **設定 is chips**: 一般 · 音声 · 文字起こし · スクショ · ショートカット · 出力 in a scrolling row,
-  the chosen one on a sliding white pill, each chip's current setting in its tooltip (and 「!」 on
+- **設定 is chips**: 一般 · 音声 · 文字起こし · スクショ · ショートカット · 出力 in a row that wraps
+  onto a second line when the window is too narrow for all six, the chosen one on a sliding white pill, each chip's current setting in its tooltip (and 「!」 on
   ショートカット when a hotkey is taken). Groups are white panels of 56 px rows: switches 48 × 32,
   ink when on; choices as small ground-coloured pills. The model list opens from 文字起こし with
   a back arrow, rather than being a seventh chip. 一般 ends with the version and ログ.

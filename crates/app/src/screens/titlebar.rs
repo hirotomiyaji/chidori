@@ -5,7 +5,7 @@
 //! its own (`main_view`), and the source menu it opens lives here.
 
 use chidori_core::settings::{Layout, SourceMode};
-use gpui_kit::{InteractiveElement, IntoElement, ParentElement, Styled, WindowControlArea, div, px};
+use gpui_kit::{FontWeight, InteractiveElement, IntoElement, ParentElement, Styled, WindowControlArea, div, px};
 
 use crate::app::{App, Message, Place, View, WinAction};
 use crate::i18n::t;
@@ -14,8 +14,8 @@ use crate::motion::{self, Look};
 use crate::native::menu::Item;
 use crate::screens::popup::Menu;
 use crate::task::Task;
-use crate::theme::{GRID, Ink, R_ROW, g, p, plain, tokens};
-use crate::ui::{self, El, clickable};
+use crate::theme::{GRID, Ink, R_ROW, SANS, TypeStyle, g, p, plain, tokens};
+use crate::ui::{self, El, Ui, clickable};
 use crate::widgets::{icon_button_sized, row, with_tip};
 
 #[derive(Debug, Clone)]
@@ -82,15 +82,70 @@ pub fn on_menu(app: &mut App, rest: &str) -> Task {
     super::main_view::source_changed(app)
 }
 
-/// 録音 · 履歴 · 設定, the current one bold on its white pill.
-fn tabs(app: &App) -> El {
-    let busy = app.rec.busy();
-    let current = app.view.place();
-    let entries = [
+/// The places' labels, in the order the tabs show them.
+fn places() -> [(Place, String, View); 3] {
+    [
         (Place::Main, t("tabRecord"), View::Main),
         (Place::History, t("history"), View::History),
         (Place::Settings, t("settings"), View::Settings),
-    ];
+    ]
+}
+
+/// How much of the bar fits the window: everything, the tabs without the name, or tighter tabs.
+#[derive(Clone, Copy, PartialEq)]
+enum Fit {
+    Full,
+    NoName,
+    Tight,
+}
+
+impl Fit {
+    /// A tab's side padding and the gap between tabs.
+    fn tab_spacing(self) -> (f32, f32) {
+        if self == Fit::Tight { (GRID, 0.0) } else { (2.0 * GRID, GRID) }
+    }
+}
+
+/// The width a line of text takes, as the bar would draw it.
+fn text_width(ui: &Ui, s: &str, style: TypeStyle, bold: bool) -> f32 {
+    let mut ts = ui.window.text_style();
+    ts.font_family = SANS.into();
+    if bold {
+        ts.font_weight = FontWeight::BOLD;
+    }
+    let run = ts.to_run(s.len());
+    f32::from(ui.window.text_system().layout_line(s, px(style.size), &[run], None).width)
+}
+
+/// Measured rather than a fixed breakpoint: English's labels are wider than Japanese's, and the
+/// window buttons must never run off the right edge.
+fn fit(app: &App, ui: &Ui, buttons: f32) -> Fit {
+    let avail = f32::from(ui.window.viewport_size().width);
+    let current = app.view.place();
+    let labels: f32 = places().iter().map(|(pl, l, _)| text_width(ui, l, tokens::LABEL, *pl == current)).sum();
+    let dot = if app.rec.busy() { 2.0 * GRID } else { 0.0 };
+    let tabs = |f: Fit| {
+        let (pad, gap) = f.tab_spacing();
+        labels + 6.0 * pad + 2.0 * gap + dot
+    };
+    // Left and right padding, the gaps either side of the spacer, the window buttons.
+    let edges = 2.0 * GRID + GRID + 2.0 * GRID + buttons;
+    let name = text_width(ui, "Chidori", tokens::BODY, true) + 2.0 * GRID;
+    if edges + name + tabs(Fit::Full) <= avail {
+        Fit::Full
+    } else if edges + tabs(Fit::NoName) <= avail {
+        Fit::NoName
+    } else {
+        Fit::Tight
+    }
+}
+
+/// 録音 · 履歴 · 設定, the current one bold on its white pill.
+fn tabs(app: &App, fit: Fit) -> El {
+    let busy = app.rec.busy();
+    let current = app.view.place();
+    let (pad, gap) = fit.tab_spacing();
+    let entries = places();
     let mut items = Vec::new();
     let mut chosen = None;
     for (i, (place, label, view)) in entries.into_iter().enumerate() {
@@ -110,7 +165,7 @@ fn tabs(app: &App) -> El {
             .flex()
             .items_center()
             .h(g(4.0))
-            .px(g(2.0))
+            .px(px(pad))
             .text_color(if here { p().ink } else { p().muted })
             .child(content);
         if !here {
@@ -120,7 +175,7 @@ fn tabs(app: &App) -> El {
         items.push(with_tip(b, tip).into_any_element());
     }
     let look = Look { color: p().surface, side: p().side, radius: R_ROW };
-    motion::slide("tabs", row().flex_none().gap(g(1.0)), items, chosen, look).into_any_element()
+    motion::slide("tabs", row().flex_none().gap(px(gap)), items, chosen, look).into_any_element()
 }
 
 /// Always on top, shrink, minimize, close: muted icons, 32 wide so four fit beside the tabs.
@@ -142,12 +197,15 @@ fn window_buttons(app: &App, layout_toggle: bool) -> El {
         .into_any_element()
 }
 
-pub fn view(app: &App) -> El {
+pub fn view(app: &App, ui: &Ui) -> El {
     let setup = app.needs_wizard();
+    let fit = if setup { Fit::Full } else { fit(app, ui, 4.0 * 4.0 * GRID) };
     let mut bar = row().flex_none().gap(g(1.0)).h(g(6.0)).pl(g(2.0)).pr(g(1.0));
-    bar = bar.child(div().flex_none().mr(g(1.0)).child(plain("Chidori", tokens::BODY).bold().text_color(p().ink)));
+    if fit == Fit::Full {
+        bar = bar.child(div().flex_none().mr(g(1.0)).child(plain("Chidori", tokens::BODY).bold().text_color(p().ink)));
+    }
     if !setup {
-        bar = bar.child(solid(tabs(app)));
+        bar = bar.child(solid(tabs(app, fit)));
     }
     bar = bar.child(div().flex_1()).child(solid(window_buttons(app, !setup)));
     // Where nothing else takes the pointer, the bar moves the window (Windows' own caption drag).

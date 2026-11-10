@@ -955,7 +955,7 @@ impl App {
         // The compact window draws its own head, with what is recorded.
         let mut page = div().size_full().flex().flex_col();
         if !self.compact() {
-            page = page.child(screens::titlebar::view(self));
+            page = page.child(screens::titlebar::view(self, ui));
         }
         let page = page.child(div().flex_1().min_h_0().w_full().flex().flex_col().child(body));
         let p = p();

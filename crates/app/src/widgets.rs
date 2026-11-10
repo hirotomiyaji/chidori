@@ -132,6 +132,13 @@ pub fn btn_with(content: impl IntoElement, variant: Variant, size: Size, on: Opt
     button_box(content, variant, size.height(), size.pad_x(), on)
 }
 
+/// A round button holding only an icon (the card's ▶): as wide as it is high, with no side
+/// padding, which would push the icon off centre.
+pub fn round_button(content: impl IntoElement, variant: Variant, size: Size, on: Option<Message>) -> Stateful<Div> {
+    let side = size.height();
+    button_box(content, variant, side, 0.0, on).w(px(side))
+}
+
 /// An icon-only button: a muted icon with no ground of its own, its name as a tooltip. `Md` is
 /// 40 × 40 (the title bar's), `Lg` 48 (the bottom bar's), `Sm` 32.
 pub fn icon_button(which: Icon, label: impl Into<String>, size: Size, on: Option<Message>) -> El {
@@ -465,8 +472,18 @@ pub fn chip(label: impl Into<String>, dot: Option<Color>, chosen: bool, on: Opti
 /// A row of chips with the chosen one's white pill sliding between them (設定's sections, 履歴's
 /// projects).
 pub fn chips(key: &str, items: Vec<El>, chosen: Option<usize>) -> Div {
-    let look = Look { color: p().surface, side: p().side, radius: R_ROW };
-    motion::slide(format!("chips-{key}"), row().flex_none().h(g(5.0)), items, chosen, look)
+    motion::slide(format!("chips-{key}"), row().flex_none().h(g(5.0)), items, chosen, chip_look())
+}
+
+/// Chips that wrap onto further lines when they don't fit (設定's sections), keeping the 40 pitch
+/// of a single row; the chosen one's pill slides between lines too.
+pub fn chips_wrapped(key: &str, items: Vec<El>, chosen: Option<usize>) -> Div {
+    let container = div().flex().flex_wrap().items_center().w_full().gap_y(g(1.0)).py(px(4.0));
+    motion::slide(format!("chips-{key}"), container, items, chosen, chip_look())
+}
+
+fn chip_look() -> Look {
+    Look { color: p().surface, side: p().side, radius: R_ROW }
 }
 
 /// A quiet text button: muted, ink when pointed at.

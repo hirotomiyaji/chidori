@@ -422,13 +422,15 @@ fn session_ctx(app: &App) -> SessionCtx<'_> {
 }
 
 /// The transcript between the card and the bar.
-fn transcript_area(app: &App, ui: &mut Ui, ph: Phase, playable: bool) -> El {
+/// The transcript with the card floating over its top.
+fn transcript_area(app: &App, ui: &mut Ui, ph: Phase, playable: bool, card: El) -> El {
+    let top = transcript::card_height("main");
     let list = transcript::view(
         app,
-        Ctx { select, live: ph == Phase::Live, editable: ph == Phase::Review, playable, wrap: wrap_list },
+        Ctx { select, live: ph == Phase::Live, editable: ph == Phase::Review, playable, wrap: wrap_list, top },
         ui,
     );
-    div().flex_1().min_h_0().w_full().child(list).into_any_element()
+    transcript::under_card("main", card, list)
 }
 
 pub fn view(app: &App, ui: &mut Ui) -> El {
@@ -465,13 +467,7 @@ pub fn view(app: &App, ui: &mut Ui) -> El {
             } else {
                 card::live_bar(app, wrap_card)
             };
-            col()
-                .size_full()
-                .child(banners)
-                .child(div().flex_none().px(g(2.0)).child(c))
-                .child(transcript_area(app, ui, ph, false))
-                .child(bar)
-                .into_any_element()
+            col().size_full().child(banners).child(transcript_area(app, ui, ph, false, c)).child(bar).into_any_element()
         }
         Phase::Review => {
             let input = title_input(app, ui);
@@ -480,12 +476,13 @@ pub fn view(app: &App, ui: &mut Ui) -> El {
             col()
                 .size_full()
                 .child(banners)
-                .child(div().flex_none().px(g(2.0)).child(card::session_card(
-                    c,
-                    input,
-                    wrap_list(ListMsg::RenameStart),
-                )))
-                .child(transcript_area(app, ui, ph, player))
+                .child(transcript_area(
+                    app,
+                    ui,
+                    ph,
+                    player,
+                    card::session_card(c, input, wrap_list(ListMsg::RenameStart)),
+                ))
                 .child(card::review_bar(c))
                 .into_any_element()
         }

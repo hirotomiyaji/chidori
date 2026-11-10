@@ -102,6 +102,7 @@
   "quitAndSave": "Save and quit",
   "recoverTitle": "The last recording ended unexpectedly. Recover it?",
   "recoverLater": "Later",
+  "recoverMore": "{n} more to recover",
   "recovered": "Recovered",
   "micDenied": "Microphone access is turned off",
   "openSettings": "Open settings",
