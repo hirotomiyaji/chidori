@@ -154,8 +154,10 @@ changes.
   the bar holds コピー, 書き出し and ⋯). The card's title renames on a click; its source opens a
   menu that switches the source (FR-17). The compact window has three rows: the title and
   source, the latest line, and the dot, timer and controls.
-- **Rare actions** sit in native popup menus, so they fit the compact window: a session's ⋯
-  (続きを録音, フォルダを開く, 削除, the same in History's rows) and コピー ▾ (Agent用, Markdown).
+- **Rare actions** sit in popup menus, drawn by the app (native where the window is too small to
+  hold one): a session's ⋯ (続きを録音, フォルダを開く, 削除, the same in History's rows) and コピー ▾
+  (Agent用, Markdown). A right click on a row, a line, a screenshot, the card, the title bar or a
+  text box opens the menu of what is under it.
 - **Errors** are a banner at the top with one action, e.g. 「マイクへのアクセスがオフです [設定を開く]」
   opening `ms-settings:privacy-microphone`. An error is an ink banner with a coral icon, a
   warning a white one with a grey icon, always with words, so colour alone never carries one.

@@ -77,8 +77,7 @@ pub struct Palette {
     pub me_wave: Color,
     /// The record dot.
     pub rec: Color,
-    /// Under the pointer: on the ground, and on a panel.
-    pub hover: Color,
+    /// A row under the pointer on a panel (buttons use `hover_of` and `wash`).
     pub hover_panel: Color,
     /// The jello's side under a white thing (pill, chip, bubble, panel), a switch's thumb, and
     /// the ink card.
@@ -103,7 +102,6 @@ pub const LIGHT: Palette = Palette {
     me: Color::hex(0x0B7A6A),
     me_wave: Color::hex(0x4FC7B3),
     rec: Color::hex(0xF05A47),
-    hover: Color::hex(0xE9E9E6),
     hover_panel: Color::hex(0xF2F2F0),
     side: Color::hex(0xD6D6D1),
     thumb_side: Color::hex(0xBDBDB8),
@@ -127,7 +125,6 @@ pub const DARK: Palette = Palette {
     me: Color::hex(0x4FC7B3),
     me_wave: Color::hex(0x4FC7B3),
     rec: Color::hex(0xF05A47),
-    hover: Color::hex(0x1A1A19),
     hover_panel: Color::hex(0x292927),
     side: Color::hex(0x0B0B0A),
     thumb_side: Color::hex(0x8A8A84),
@@ -209,6 +206,20 @@ pub fn mix(a: Color, b: Color, amount: f32) -> Color {
 
 pub fn alpha(c: Color, a: f32) -> Color {
     Color { a, ..c }
+}
+
+/// A filled button's ground under the pointer: one step from its own ground, toward its text on
+/// an ink pill and toward ink on any other, so it shows on the ground, a panel or a dialog alike
+/// (DECISIONS → UI, "Hover").
+pub fn hover_of(bg: Color) -> Color {
+    let p = p();
+    if bg == p.ink { mix(p.on_ink, p.ink, 0.15) } else { mix(p.ink, bg, 0.10) }
+}
+
+/// What a button with no ground of its own (an icon, a ghost) lays under the pointer: ink, thin
+/// enough to darken (or, in dark, lighten) whatever it sits on, a hovered row included.
+pub fn wash() -> Color {
+    alpha(p().ink, if is_dark() { 0.10 } else { 0.07 })
 }
 
 /// Text styles on any styled element: bold and the mono face.

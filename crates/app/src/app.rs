@@ -153,6 +153,10 @@ pub struct App {
     pub models_ui: screens::models::State,
     pub wizard: screens::wizard::State,
     pub dialogs: screens::dialogs::State,
+    /// The drawn popup menu, when one is open.
+    pub menu: screens::popup::State,
+    /// The window's size as last drawn, for placing a menu.
+    pub viewport: Size,
 }
 
 #[derive(Debug, Clone)]
@@ -175,8 +179,15 @@ pub enum Message {
     Toast(String, Level),
     /// A command failed: a banner or a toast, by its error code (`fallback` is the toast's key).
     Failed(AppError, &'static str),
-    /// Shows a native popup menu, at a point in the window or at the cursor.
+    /// Shows a popup menu, at a point in the window or at the pointer.
     Popup(Vec<menu::Item>, Option<Point>),
+    /// A popup menu whose `msg:<n>` rows send these messages.
+    PopupWith(Vec<menu::Item>, Vec<Message>),
+    Menu(screens::popup::Msg),
+    /// A key pressed while a menu is open.
+    MenuKey(ui::KeyPress),
+    /// A pick in a text box's menu.
+    TextEdit(gpui_kit::SharedString, ui::TextOp),
 
     SettingsChanged(Box<(Settings, Settings)>),
     Info(Box<AppInfo>),
@@ -349,6 +360,8 @@ impl App {
             models_ui: Default::default(),
             wizard: Default::default(),
             dialogs: Default::default(),
+            menu: Default::default(),
+            viewport: EXPANDED,
         };
         let follow = app.follow_session(app.rec.session_id.clone());
         let tasks = Task::batch([
@@ -485,6 +498,7 @@ impl App {
                 Task::batch([screens::main_view::tick(self), screens::viewer::tick(self)])
             }
             Message::Go(view) => {
+                self.menu.open = None;
                 self.go(view);
                 let refresh = match view {
                     View::History => screens::history::on_open(self),
@@ -523,13 +537,23 @@ impl App {
                 Task::none()
             }
             Message::Popup(items, at) => {
-                if !crate::drive::popup(&items)
+                crate::drive::popup(&items);
+                // Drawn in the window; native only where the window is too small to hold it.
+                if !screens::popup::open(self, items.clone(), at)
+                    && !crate::drive::on()
                     && let Some(hwnd) = self.hwnd
                 {
                     menu::popup(hwnd, &items, at);
                 }
                 Task::none()
             }
+            Message::PopupWith(items, msgs) => {
+                self.menu.msgs = msgs;
+                self.update(Message::Popup(items, None))
+            }
+            Message::Menu(m) => screens::popup::update(self, m),
+            Message::MenuKey(key) => screens::popup::on_key(self, &key),
+            Message::TextEdit(key, op) => Task::cmd(Cmd::Edit(key, op)),
             Message::SettingsChanged(both) => {
                 let (old, new) = *both;
                 self.apply_settings(&old, &new);
@@ -645,6 +669,7 @@ impl App {
             UiEvent::Exit => crate::task::exit(),
             UiEvent::Menu(id) => {
                 tracing::debug!("menu pick {id}");
+                self.menu.open = None;
                 self.on_menu(id)
             }
         }
@@ -669,6 +694,7 @@ impl App {
             "viewer" => screens::viewer::on_menu(self, &rest),
             "settings" => screens::settings::on_menu(self, &rest),
             "dialog" => screens::dialogs::on_menu(self, &rest),
+            "msg" => screens::popup::picked(self, &rest),
             _ => Task::none(),
         }
     }
@@ -879,6 +905,9 @@ impl App {
 
     /// A key pressed anywhere in the window, for the screens that answer one.
     fn on_key(&self, key: &ui::KeyPress) -> Vec<Message> {
+        if screens::popup::is_open(self) {
+            return vec![Message::MenuKey(key.clone())];
+        }
         let mut out = Vec::new();
         out.extend(screens::dialogs::on_key(self, key));
         if screens::dialogs::is_open(self) {
@@ -949,6 +978,9 @@ impl App {
         root = root.child(screens::notices::toasts(self));
         if let Some(d) = screens::dialogs::view(self, ui) {
             root = root.child(d);
+        }
+        if let Some(menu) = screens::popup::view(self) {
+            root = root.child(menu);
         }
         root.into_any_element()
     }
@@ -1054,6 +1086,7 @@ impl AppView {
                 }
                 window.activate_window();
             }
+            Cmd::Edit(key, op) => ui::edit(&key, op, window, cx),
             Cmd::Exit => cx.quit(),
         }
     }
@@ -1142,6 +1175,8 @@ impl Render for AppView {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         ui::begin_frame();
         self.app.dropping = cx.has_active_drag() && self.app.can_drop();
+        let vp = window.viewport_size();
+        self.app.viewport = Size::new(f32::from(vp.width), f32::from(vp.height));
         let view = {
             let mut ui = Ui { window, cx };
             self.app.view(&mut ui)
@@ -1150,6 +1185,9 @@ impl Render for AppView {
             .id("chidori")
             .size_full()
             .track_focus(&self.focus)
+            // Where the pointer is, for a menu opened at it.
+            .on_mouse_move(|e, _, _| ui::set_pointer(e.position))
+            .capture_any_mouse_down(|e, _, _| ui::set_pointer(e.position))
             .on_drop(|paths: &ExternalPaths, _, cx| {
                 if let Some(path) = paths.paths().first() {
                     ui::send(Message::WindowEvent(WindowEvent::FileDropped(path.clone())), cx);

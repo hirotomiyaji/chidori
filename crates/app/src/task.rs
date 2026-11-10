@@ -26,6 +26,8 @@ pub enum Cmd {
     Minimize,
     Hide,
     Show,
+    /// Cuts, copies, pastes or selects all in a text box (by its key), from its menu.
+    Edit(SharedString, crate::ui::TextOp),
     /// Quits the app.
     Exit,
 }
