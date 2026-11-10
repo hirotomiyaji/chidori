@@ -394,8 +394,13 @@ fn header(app: &App, ui: &mut Ui, page: Option<&Project>, filter: &Filter, shown
             chosen = Some(items.len());
         }
         items.push(chip(t("noProject"), None, *filter == Filter::None, Some(msg(Msg::Pick("filter-none".into())))));
-        let strip =
-            div().id("history-chips").flex_1().min_w_0().overflow_x_scroll().child(chips("history", items, chosen));
+        let strip = div()
+            .id("history-chips")
+            .flex()
+            .flex_1()
+            .min_w_0()
+            .overflow_x_scroll()
+            .child(chips("history", items, chosen));
         chips_row = chips_row.child(strip);
     } else {
         chips_row = chips_row.child(fill());

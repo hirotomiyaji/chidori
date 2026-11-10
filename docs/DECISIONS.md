@@ -390,7 +390,9 @@ found a reason to deviate.
   gone from the bar; the app and tray icons stay the kamon kit's until Jello has an icon tool),
   録音 · 履歴 · 設定 as text tabs with the current one on a white pill, 録音 with a small red dot
   while recording elsewhere (it leads back to the recording), then always on top, shrink,
-  minimize and close as muted icons. The setup wizard shows no tabs. No bottom tabs.
+  minimize and close as muted icons. The setup wizard shows no tabs. No bottom tabs. When the
+  window is too narrow for all of it (measured from the labels, since English's are wider), 「Chidori」
+  gives way first, then the tabs tighten, so the window buttons never leave the window.
 - **The start screen** is two labelled white panels. 「相手（聞き取るアプリ）」 with a refresh
   button lists the apps (those with an audio session first), then システム全体 and マイクだけ, as
   64 px rows of the name over 音が出ています or 無音, the chosen one bold with a check and a

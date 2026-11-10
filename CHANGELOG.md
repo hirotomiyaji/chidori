@@ -8,6 +8,8 @@ All notable changes are listed here. Versions follow [SemVer](https://semver.org
 
 - 設定's sections all show: in a narrow window the chips wrap onto a second line instead of running off its edge, which hid 出力.
 - 後で on the recovery dialog puts off every interrupted recording at once instead of one per press, and the dialog says how many more are waiting.
+- The window buttons stay inside a narrow window, and inside the default one in English: 「Chidori」 makes way first, then the tabs move closer together.
+- 履歴's project chips scroll sideways when there are more than fit.
 
 ## [0.8.1] - 2026-11-08
 
