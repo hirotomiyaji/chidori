@@ -381,7 +381,8 @@ pub fn on_key(app: &App, key: &KeyPress) -> Option<Message> {
 /// loses its mark.
 pub fn timers(app: &App) -> Vec<(Duration, Message)> {
     let mut t = Vec::new();
-    if app.main.player.playing() && !app.hidden {
+    // A recording started with the window hidden (by the hotkey) still stops the sound.
+    if app.main.player.playing() && (!app.hidden || app.rec.busy()) {
         t.push((Duration::from_millis(250), Message::Main(Msg::PlayTick)));
     }
     if app.main.list.marked.is_some() {

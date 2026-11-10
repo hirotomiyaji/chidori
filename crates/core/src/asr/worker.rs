@@ -393,6 +393,12 @@ impl AsrWorker {
                 .map_or(0, |f| f.end_ms.saturating_sub(f.start_ms))
     }
 
+    /// The model failed to load and nothing will load another: queued finals would wait forever.
+    pub fn stalled(&self) -> bool {
+        let q = self.shared.queue.lock();
+        q.command.is_none() && !q.engine_ready && self.shared.status.lock().state == EngineState::Failed
+    }
+
     /// Removes queued partials (e.g. when a session stops).
     pub fn drop_partials(&self, session_id: &str) {
         let mut q = self.shared.queue.lock();

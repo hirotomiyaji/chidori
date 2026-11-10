@@ -206,6 +206,26 @@ fn ends_with_newline(path: &Path) -> io::Result<bool> {
     Ok(b[0] == b'\n')
 }
 
+/// Whether the log's last recording stopped: `Some(false)` while one runs or after a crash, `None`
+/// without a readable log. Only the lines that start or end a recording are parsed, so this is
+/// quick on a long log.
+pub fn stopped(folder: &Path) -> Option<bool> {
+    let text = std::fs::read(folder.join(LOG_FILE)).ok()?;
+    let mut stopped = false;
+    for line in text.split(|b| *b == b'\n') {
+        let line = String::from_utf8_lossy(line);
+        if !line.contains("\"type\":\"session_") {
+            continue;
+        }
+        match serde_json::from_str::<LogLine>(line.trim()).map(|l| l.event) {
+            Ok(LogEvent::SessionStarted { .. } | LogEvent::SessionContinued { .. }) => stopped = false,
+            Ok(LogEvent::SessionStopped { .. }) => stopped = true,
+            _ => {}
+        }
+    }
+    Some(stopped)
+}
+
 #[derive(Debug)]
 pub struct Replay {
     pub session: Session,

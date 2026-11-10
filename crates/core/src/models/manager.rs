@@ -193,9 +193,13 @@ pub fn import(app: &AppHandle, st: &AppState, id: &str, source: &Path) -> AppRes
         return Err(AppError::new(ErrorCode::ModelChecksum, "checksum mismatch"));
     }
     std::fs::create_dir_all(&st.models_dir)?;
-    let part = entry.part_path_in(&st.models_dir);
+    // Not the download's `.part`: a download of the same model may be writing it.
+    let part = entry.part_path_in(&st.models_dir).with_extension("import");
     std::fs::copy(source, &part)?;
-    std::fs::rename(&part, entry.path_in(&st.models_dir))?;
+    if let Err(e) = std::fs::rename(&part, entry.path_in(&st.models_dir)) {
+        let _ = std::fs::remove_file(&part);
+        return Err(e.into());
+    }
     emit_progress(app, id, total, total, 0.0, "done", None);
     if st.settings.read().model_id == id {
         st.load_selected_model();

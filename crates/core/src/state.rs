@@ -23,6 +23,9 @@ pub struct AppState {
     pub internal: Mutex<AppStateFile>,
     pub worker: Arc<AsrWorker>,
     pub recorder: Mutex<Phase>,
+    /// Held while a recording or a file transcription starts: starting takes a moment with the
+    /// recorder unlocked, and a second start in that moment must not start a second session.
+    pub starting: Mutex<()>,
     pub levels: Arc<Levels>,
     pub models_dir: PathBuf,
     pub default_output_root: String,
@@ -31,6 +34,8 @@ pub struct AppState {
     pub downloads: Mutex<HashMap<String, watch::Sender<bool>>>,
     pub last_shot: Mutex<Option<Instant>>,
     pub quit_after_finish: AtomicBool,
+    /// Serializes saving `settings.json`, so the last save always writes the newest settings.
+    persisting: Mutex<()>,
     #[cfg(any(windows, target_os = "macos"))]
     pub capturer: crate::screenshot::XcapCapturer,
     /// How loud each app in the source picker is.
@@ -60,6 +65,7 @@ impl AppState {
             internal: Mutex::new(internal),
             worker,
             recorder: Mutex::new(Phase::Idle),
+            starting: Mutex::new(()),
             levels: Arc::new(Levels::default()),
             models_dir,
             default_output_root,
@@ -67,6 +73,7 @@ impl AppState {
             downloads: Mutex::new(HashMap::new()),
             last_shot: Mutex::new(None),
             quit_after_finish: AtomicBool::new(false),
+            persisting: Mutex::new(()),
             #[cfg(any(windows, target_os = "macos"))]
             capturer: crate::screenshot::XcapCapturer,
             #[cfg(windows)]
@@ -104,6 +111,7 @@ impl AppState {
     }
 
     pub fn persist_settings(&self, app: &AppHandle) {
+        let _saving = self.persisting.lock();
         let s = self.settings.read().clone();
         if let Err(e) = save_settings(app, &s) {
             tracing::error!("saving settings failed: {e}");

@@ -148,7 +148,8 @@ pub fn wall_time(session: &Session, t_ms: u64) -> DateTime<FixedOffset> {
 /// `HH:MM:SS` wall-clock time of a session offset; for a session from a file (FR-18), the place in
 /// the file, which is what its times mean.
 pub fn clock(session: &Session, t_ms: u64) -> String {
-    if session.from_file() {
+    // A recording that continued a file's session (FR-08) has clock times.
+    if session.from_file() && !session.continued.iter().any(|c| c.at_ms <= t_ms) {
         return hms(t_ms);
     }
     wall_time(session, t_ms).format("%H:%M:%S").to_string()

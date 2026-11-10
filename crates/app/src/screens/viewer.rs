@@ -107,7 +107,9 @@ pub fn update(app: &mut App, msg: Msg) -> Task {
         // A past session has no camera.
         Msg::Card(CardMsg::ShotMenu | CardMsg::ShotWindows(_)) => Task::none(),
         Msg::PlayTick => {
-            if app.view != View::Session {
+            // Leaving the session stops its sound, and so does a recording starting, which would
+            // otherwise take it in through the speakers.
+            if app.view != View::Session || app.rec.busy() {
                 stop(app);
                 return Task::none();
             }
@@ -130,6 +132,9 @@ pub fn update(app: &mut App, msg: Msg) -> Task {
 }
 
 fn play_from(app: &mut App, ms: u64) {
+    if app.rec.busy() {
+        return;
+    }
     let v = &mut app.viewer;
     let Some(folder) = &v.transcript.folder else { return };
     let files: Vec<_> =
@@ -180,11 +185,13 @@ pub fn on_key(app: &App, key: &KeyPress) -> Option<Message> {
 /// While playing, the playhead steps four times a second.
 pub fn timers(app: &App) -> Vec<(Duration, Message)> {
     let mut t = Vec::new();
+    // Ticks on after the view is left, or once a recording starts with the window hidden, so the
+    // tick can stop the sound.
+    if app.viewer.player.playing() && (!app.hidden || app.view != View::Session || app.rec.busy()) {
+        t.push((Duration::from_millis(250), Message::Viewer(Msg::PlayTick)));
+    }
     if app.view != View::Session {
         return t;
-    }
-    if app.viewer.player.playing() && !app.hidden {
-        t.push((Duration::from_millis(250), Message::Viewer(Msg::PlayTick)));
     }
     if app.viewer.list.marked.is_some() {
         t.push((transcript::MARK_FOR, Message::Viewer(Msg::List(ListMsg::Unmark))));

@@ -29,6 +29,10 @@ pub enum ErrorCode {
     /// A file to transcribe (FR-18) has no sound track, or Windows can't read its format.
     #[serde(rename = "E_FILE_UNREADABLE")]
     FileUnreadable,
+    /// A start or stop is already under way: a second press of the same button or hotkey,
+    /// which needs no answer.
+    #[serde(rename = "E_BUSY")]
+    Busy,
     #[serde(rename = "E_INTERNAL")]
     Internal,
 }
@@ -48,6 +52,7 @@ impl ErrorCode {
             ErrorCode::PdfFailed => "E_PDF_FAILED",
             ErrorCode::Network => "E_NETWORK",
             ErrorCode::FileUnreadable => "E_FILE_UNREADABLE",
+            ErrorCode::Busy => "E_BUSY",
             ErrorCode::Internal => "E_INTERNAL",
         }
     }

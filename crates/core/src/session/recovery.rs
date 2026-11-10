@@ -209,8 +209,12 @@ pub fn list(root: &Path) -> Vec<SessionSummary> {
         .map(|e| e.path())
         .filter(|p| p.join(log::LOG_FILE).exists() || p.join(SNAPSHOT_FILE).exists())
         .filter_map(|folder| {
-            // A snapshot exists only once a session stopped (or was recovered).
-            if let Some(snap) = read_snapshot(&folder) {
+            // The snapshot is quicker than the log, but only the log says whether the session
+            // stopped: a snapshot outlives a continued recording that then crashed (FR-08), and
+            // an edit writes one for a session that never stopped.
+            if log::stopped(&folder) != Some(false)
+                && let Some(snap) = read_snapshot(&folder)
+            {
                 return Some(summarize(&snap.session, &folder, false));
             }
             let r = log::replay(&folder).ok()?;
@@ -369,6 +373,52 @@ mod tests {
         // History draws the same, not when each side spoke (one line, 1 s to 4 s).
         let listed = list(root.path());
         assert_eq!((&listed[0].activity.others, &listed[0].activity.me), (&s.others, &s.me));
+    }
+
+    #[test]
+    fn a_continued_session_that_crashed_is_recoverable_despite_its_snapshot() {
+        let root = tempfile::tempdir().unwrap();
+        let folder = root.path().join("s");
+        write_log(&folder, true);
+        let (session, _, _) = load(&folder).unwrap();
+        save_outputs(&folder, &session, &ExportOptions::default(), "0.1.0").unwrap();
+        assert!(recoverable(root.path(), None).is_empty());
+        // Continued, then the app died before the next session_stopped.
+        let log = SessionLog::open_append(&folder).unwrap();
+        log.append(&LogEvent::SessionContinued {
+            at_ms: 60_100,
+            started_at: "2026-10-02T16:00:00+09:00".into(),
+            sources: Vec::new(),
+        })
+        .unwrap();
+        log.append(&LogEvent::Segment {
+            id: "seg_000002".into(),
+            utterance_id: "utt_000002".into(),
+            source: SourceId::App,
+            t_start_ms: 61_000,
+            t_end_ms: 63_000,
+            text: "続きです。".into(),
+            no_speech: 0.01,
+        })
+        .unwrap();
+        let rec = recoverable(root.path(), None);
+        assert_eq!(rec.len(), 1);
+        assert_eq!(rec[0].segments, 2);
+    }
+
+    #[test]
+    fn editing_a_crashed_session_keeps_it_recoverable() {
+        let root = tempfile::tempdir().unwrap();
+        let folder = root.path().join("s");
+        write_log(&folder, false);
+        // A rename from 履歴 appends to the log and writes the outputs, snapshot included.
+        SessionLog::open_append(&folder).unwrap().append(&LogEvent::TitleChanged { title: "名前".into() }).unwrap();
+        let (session, stopped, _) = load(&folder).unwrap();
+        assert!(!stopped);
+        save_outputs(&folder, &session, &ExportOptions::default(), "0.1.0").unwrap();
+        let rec = recoverable(root.path(), None);
+        assert_eq!(rec.len(), 1);
+        assert_eq!(rec[0].title, "名前");
     }
 
     #[test]

@@ -423,6 +423,17 @@ fn segmenter_config(settings: &Settings) -> SegmenterConfig {
     }
 }
 
+/// The right to start, held until the new phase is in place: a second start meanwhile (a
+/// double click, a second hotkey press) is turned away instead of starting a second session.
+fn claim_start(st: &AppState) -> AppResult<parking_lot::MutexGuard<'_, ()>> {
+    let busy = || AppError::new(ErrorCode::Busy, "already recording");
+    let guard = st.starting.try_lock().ok_or_else(busy)?;
+    if !matches!(&*st.recorder.lock(), Phase::Idle) {
+        return Err(busy());
+    }
+    Ok(guard)
+}
+
 /// A new session, or a saved one that a recording continues (FR-08).
 #[cfg(any(windows, target_os = "macos"))]
 enum Begin {
@@ -450,9 +461,7 @@ pub fn continue_session(
 
 #[cfg(any(windows, target_os = "macos"))]
 fn begin(app: &AppHandle, st: &AppState, config: SourceConfig, how: Begin) -> AppResult<StartResponse> {
-    if !matches!(&*st.recorder.lock(), Phase::Idle) {
-        return Err(AppError::internal("already recording"));
-    }
+    let _starting = claim_start(st)?;
     let settings = st.settings.read().clone();
     let (entry, gpu) = prepare_model(st, &settings)?;
     check_source(&config)?;
@@ -616,24 +625,28 @@ fn stop_sources(active: &mut Active) {
 
 /// Stops capture, transcribes what is queued (「仕上げ中…」), then saves the session.
 pub fn stop(app: &AppHandle, st: &AppState) -> AppResult<()> {
+    let cancel = Arc::new(AtomicBool::new(false));
+    // Recording goes straight to Finishing under one lock: never Idle in between, where a start
+    // could slip in.
     let mut active = {
         let mut rec = st.recorder.lock();
-        match std::mem::replace(&mut *rec, Phase::Idle) {
+        let finishing = match &*rec {
+            Phase::Recording(a) => Phase::Finishing {
+                session_id: a.store.id.clone(),
+                folder: a.store.folder.clone(),
+                sources: a.sources.clone(),
+                cancel: cancel.clone(),
+            },
+            // A second Stop while the first one finishes.
+            Phase::Finishing { .. } => return Err(AppError::new(ErrorCode::Busy, "already stopping")),
+            Phase::Idle => return Err(AppError::internal("not recording")),
+        };
+        match std::mem::replace(&mut *rec, finishing) {
             Phase::Recording(a) => a,
-            other => {
-                *rec = other;
-                return Err(AppError::internal("not recording"));
-            }
+            _ => unreachable!("checked above"),
         }
     };
     let stop_ms = active.paused_at.unwrap_or_else(|| active.now_ms());
-    let cancel = Arc::new(AtomicBool::new(false));
-    *st.recorder.lock() = Phase::Finishing {
-        session_id: active.store.id.clone(),
-        folder: active.store.folder.clone(),
-        sources: active.sources.clone(),
-        cancel: cancel.clone(),
-    };
     emit_state(app, st);
     let app = app.clone();
     std::thread::Builder::new()
@@ -676,6 +689,9 @@ fn file_progress(total_ms: u64, read_ms: u64, pending_ms: u64) -> events::Progre
     events::ProgressPayload { done: 0, total: 0, done_ms: read_ms.saturating_sub(pending_ms).min(total_ms), total_ms }
 }
 
+/// Finishing waits this many polls (200 ms each) on a model that failed to load before it gives up.
+const STALLED_POLLS: u32 = 10;
+
 /// Transcribes what is queued (「仕上げ中…」), then saves the session.
 fn finish_session(
     app: &AppHandle,
@@ -692,6 +708,7 @@ fn finish_session(
     let total = st.worker.pending_finals(&id);
     let total_ms = st.worker.pending_ms(&id);
     let mut dropped_ms = None;
+    let mut stalled_polls = 0;
     loop {
         let pending = st.worker.pending_finals(&id);
         let progress = match &file {
@@ -707,7 +724,15 @@ fn finish_session(
         if pending == 0 {
             break;
         }
-        if cancel.load(Ordering::SeqCst) && dropped_ms.is_none() {
+        // A model that failed to load never takes the queue: what waits is unprocessed, as if
+        // cancelled. Checked over a while, since a load that was just asked for reads as the
+        // last failure until the worker picks it up.
+        stalled_polls = if st.worker.stalled() { stalled_polls + 1 } else { 0 };
+        let give_up = cancel.load(Ordering::SeqCst) || stalled_polls >= STALLED_POLLS;
+        if give_up && dropped_ms.is_none() {
+            if !cancel.load(Ordering::SeqCst) {
+                tracing::warn!("the model failed to load; {id}'s queued speech stays unprocessed");
+            }
             dropped_ms = Some(st.worker.cancel_session(&id));
         }
         std::thread::sleep(Duration::from_millis(200));
@@ -781,9 +806,7 @@ fn file_error(e: anyhow::Error) -> AppError {
 /// recording's pipeline, read as fast as Whisper takes it, while the view finishes (「仕上げ中…」)
 /// with how far into the file the text has got. Session time is time in the file.
 pub fn transcribe_file(app: &AppHandle, st: &AppState, path: PathBuf) -> AppResult<StartResponse> {
-    if !matches!(&*st.recorder.lock(), Phase::Idle) {
-        return Err(AppError::internal("already recording"));
-    }
+    let _starting = claim_start(st)?;
     let settings = st.settings.read().clone();
     let (entry, gpu) = prepare_model(st, &settings)?;
     let lossy = |s: Option<&std::ffi::OsStr>| s.map(|s| s.to_string_lossy().into_owned()).unwrap_or_default();
@@ -866,11 +889,18 @@ pub fn transcribe_file(app: &AppHandle, st: &AppState, path: PathBuf) -> AppResu
         .spawn(move || {
             let st = app.state();
             let total = || progress.duration_ms.load(Ordering::SeqCst).max(progress.read_ms.load(Ordering::SeqCst));
-            while !progress.done.load(Ordering::SeqCst) && !cancel.load(Ordering::SeqCst) {
+            // Reading waits on Whisper, so a model that failed to load would hold it forever.
+            let mut stalled_polls = 0;
+            while !progress.done.load(Ordering::SeqCst)
+                && !cancel.load(Ordering::SeqCst)
+                && stalled_polls < STALLED_POLLS
+            {
                 let read = progress.read_ms.load(Ordering::SeqCst);
                 events::emit(&app, events::Event::Finishing(file_progress(total(), read, st.worker.pending_ms(&id))));
                 std::thread::sleep(Duration::from_millis(200));
+                stalled_polls = if st.worker.stalled() { stalled_polls + 1 } else { 0 };
             }
+            let gave_up = stalled_polls >= STALLED_POLLS && !progress.done.load(Ordering::SeqCst);
             source.stop();
             drop(source);
             match dsp.join() {
@@ -900,7 +930,7 @@ pub fn transcribe_file(app: &AppHandle, st: &AppState, path: PathBuf) -> AppResu
             }
             let (read_ms, total_ms) = (progress.read_ms.load(Ordering::SeqCst), total());
             // A file read to its end has nothing unread, though its stated length may differ a little.
-            let stopped_early = broke_off.is_some() || cancel.load(Ordering::SeqCst);
+            let stopped_early = broke_off.is_some() || cancel.load(Ordering::SeqCst) || gave_up;
             let unread_ms = if stopped_early { total_ms - read_ms } else { 0 };
             finish_session(&app, st, &store, read_ms, &cancel, Some(FileEnd { total_ms, unread_ms }));
         })
@@ -1351,6 +1381,10 @@ pub fn toggle(app: &AppHandle, st: &AppState) {
         _ => Ok(()),
     };
     if let Err(e) = result {
+        // A second press while the first one starts or stops: nothing to say.
+        if e.code == ErrorCode::Busy {
+            return;
+        }
         tracing::warn!("toggle failed: {e}");
         let mut n = Notice::new(NoticeLevel::Error, e.code.as_str(), "startFailed").param("detail", e.message.clone());
         if e.code == ErrorCode::MicDenied {
