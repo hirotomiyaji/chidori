@@ -214,7 +214,7 @@ mod tests {
     use crate::audio::decode::tests::tone_wav;
 
     #[test]
-    fn a_file_is_placed_on_its_own_clock_as_fast_as_it_is_taken() {
+    fn a_file_is_placed_on_its_own_clock() {
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("tone.wav");
         tone_wav(&path, 48_000, 2, 3.0);
@@ -222,11 +222,8 @@ mod tests {
         let mut src = FileSource::new(SourceId::File, path, None, t0, 1.0).with_pace(Pace::AheadOf(Arc::new(|| false)));
         let progress = src.progress();
         let (tx, rx) = crossbeam_channel::unbounded();
-        let started = Instant::now();
         src.start(tx).unwrap();
         src.join();
-        // Three seconds of sound in far less time.
-        assert!(started.elapsed() < Duration::from_secs(2));
         // Each piece starts where the one before it ended.
         let mut frames = 0u64;
         for c in rx.try_iter() {
@@ -238,6 +235,21 @@ mod tests {
         assert!(progress.done.load(Ordering::SeqCst));
         assert!(progress.read_ms.load(Ordering::SeqCst).abs_diff(3_000) <= 50);
         assert!(progress.duration_ms.load(Ordering::SeqCst).abs_diff(3_000) <= 50);
+    }
+
+    #[test]
+    fn a_file_is_read_as_fast_as_it_is_taken() {
+        // A minute of sound reads in well under a second, but CI runs the suite in parallel on a
+        // shared machine, so the bound is half the length: only pacing to real time can cross it.
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("minute.wav");
+        tone_wav(&path, 8_000, 1, 60.0);
+        let mut src = FileSource::new(SourceId::File, path, None, 0, 1.0).with_pace(Pace::AheadOf(Arc::new(|| false)));
+        let (tx, _rx) = crossbeam_channel::unbounded();
+        let started = Instant::now();
+        src.start(tx).unwrap();
+        src.join();
+        assert!(started.elapsed() < Duration::from_secs(30), "{:?}", started.elapsed());
     }
 
     #[test]
