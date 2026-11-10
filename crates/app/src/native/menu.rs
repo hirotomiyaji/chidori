@@ -1,6 +1,7 @@
-//! Native popup menus (a session's ⋯, コピー ▾, the camera's menu...). Native rather than drawn,
-//! because the compact window (380 × 170) is too small to hold a dropdown, and a native menu may
-//! reach past the window. A pick arrives through the bridge as `UiEvent::Menu(id)`.
+//! A menu's items, and the native popup that shows them where the app's own drawn menu
+//! (`screens::popup`) can't fit the window: the compact window (380 × 170) is too small for a
+//! long one, and a native menu may reach past the window. A pick arrives through the bridge as
+//! `UiEvent::Menu(id)`.
 
 use tray_icon::menu::{CheckMenuItem, ContextMenu, IsMenuItem, Menu, MenuEvent, MenuItem, PredefinedMenuItem, Submenu};
 

@@ -37,7 +37,7 @@ use crate::motion::{self, Look};
 use crate::screens::notices;
 use crate::screens::titlebar;
 use crate::task::Task;
-use crate::theme::{GRID, Ink, R_PANEL, R_ROW, g, line, p, tokens};
+use crate::theme::{GRID, Ink, R_PANEL, R_ROW, g, line, p, plain, tokens};
 use crate::ui::{El, KeyPress, Ui, clickable, uid};
 use crate::widgets::{col, fill, row, with_tip};
 
@@ -513,14 +513,16 @@ fn compact(app: &App, ph: Phase, ui: &mut Ui) -> El {
             .overflow_hidden()
             .text_color(p_.muted)
             .hover(move |s| s.text_color(ink))
-            .child(line(what, tokens::LABEL, p_.muted));
+            .child(plain(what, tokens::LABEL).overflow_hidden().text_ellipsis());
         head = head.child(titlebar::solid(with_tip(switch, t("chooseSource")).into_any_element()));
     }
-    let head = head
-        .child(fill())
-        .child(titlebar::compact_buttons())
-        .id("compact-head")
-        .window_control_area(WindowControlArea::Drag);
+    let head = titlebar::with_window_menu(
+        app,
+        head.child(fill())
+            .child(titlebar::compact_buttons())
+            .id("compact-head")
+            .window_control_area(WindowControlArea::Drag),
+    );
 
     // The strip: the choice before a recording, the latest line after it starts.
     let strip_body: El = match ph {

@@ -25,6 +25,7 @@ use crate::model::line::{Sample, Shape, session_shape};
 use crate::model::transcript::Transcript;
 use crate::native::menu::Item;
 use crate::paint::{Frame, Point, Size as Sz, canvas_el};
+use crate::screens::popup::Menu;
 use crate::screens::session_menu::{self, SessionRef};
 use crate::theme::{self, Color, GRID, Ink, R_PANEL, R_TAG, alpha, g, line, p, plain, project_color, tokens};
 use crate::ui::{self, El, Field, Ui, clickable, uid};
@@ -436,6 +437,12 @@ fn session_wave(c: SessionCtx<'_>) -> El {
 pub fn session_card(c: SessionCtx<'_>, title_input: Option<El>, rename: Message) -> El {
     let p_ = p();
     let tr = c.tr;
+    // A right click on the card: 名前を変更, then the session's ⋯ menu.
+    let menu = tr.session_id.as_deref().map(|id| {
+        let more =
+            session_menu::items(c.app, SessionRef { id, recoverable: false, project: tr.project.as_deref() }, false);
+        Menu::new().act(t("rename"), Some(rename.clone())).separator().items(more).open()
+    });
     let title: El = match title_input {
         Some(input) => input,
         None => {
@@ -467,7 +474,10 @@ pub fn session_card(c: SessionCtx<'_>, title_input: Option<El>, rename: Message)
         }
         card = card.child(r.child(session_wave(c)));
     }
-    card.into_any_element()
+    match menu {
+        Some(menu) => ui::on_right(card.id("session-card"), menu).into_any_element(),
+        None => card.into_any_element(),
+    }
 }
 
 /// コピー: an ink pill split in two, the words copying plain text and ▾ picking another format.
@@ -477,7 +487,7 @@ fn copy_split(id: &str) -> El {
         Item::action(format!("action:copy-agent:{id}"), t("copyForAgent")),
         Item::action(format!("action:copy-markdown:{id}"), t("copyMarkdown")),
     ];
-    let hover = theme::mix(p_.ink, p_.on_ink, 0.12);
+    let hover = theme::hover_of(p_.ink);
     let main = clickable(Some(Message::Action(Action::Copy(CopyFormat::Plain, Some(id.to_string())))), "copy")
         .flex()
         .items_center()
@@ -534,7 +544,7 @@ pub fn review_bar(c: SessionCtx<'_>) -> El {
 /// 「新しい録音」: an icon button with the record dot, back to the start.
 fn new_button(side: f32) -> El {
     let dot = div().size(g(2.0)).rounded(g(1.0)).bg(p().rec);
-    let hover = p().hover;
+    let hover = theme::wash();
     let b = clickable(Some(Message::Action(Action::NewRecording)), "new-recording")
         .flex()
         .flex_none()
@@ -671,7 +681,7 @@ fn start_label(app: &App) -> El {
 fn go_button(app: &App, side: f32, dot: f32) -> El {
     let enabled = app.rec.state == UiState::Ready;
     let p_ = p();
-    let hover = theme::mix(p_.ink, p_.on_ink, 0.12);
+    let hover = theme::hover_of(p_.ink);
     let mut b = clickable(enabled.then_some(Message::Action(Action::ToggleRecording)), "go")
         .flex()
         .flex_none()

@@ -120,7 +120,7 @@ pub fn seed(core: &AppHandle) {
 /// real screen and wait for a real click); `state` lists its items and `menu` picks one.
 static POPUP: Mutex<Vec<menu::Item>> = Mutex::new(Vec::new());
 
-/// Takes a popup menu instead of showing it; `false` when the run is not driven.
+/// Keeps a popup menu for `state` to list; `false` when the run is not driven.
 pub fn popup(items: &[menu::Item]) -> bool {
     if on() {
         *POPUP.lock() = items.to_vec();

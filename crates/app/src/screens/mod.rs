@@ -6,6 +6,7 @@ pub mod history;
 pub mod main_view;
 pub mod models;
 pub mod notices;
+pub mod popup;
 pub mod session_menu;
 pub mod settings;
 pub mod titlebar;

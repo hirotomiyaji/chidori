@@ -14,7 +14,7 @@ use gpui_kit::{
 use crate::app::Message;
 use crate::icons::{Icon, icon, turned};
 use crate::motion::{self, Look};
-use crate::theme::{Color, GRID, Ink, R_PANEL, R_ROW, alpha, g, line, p, plain, t, tokens};
+use crate::theme::{Color, GRID, Ink, R_PANEL, R_ROW, alpha, g, hover_of, line, p, plain, t, tokens, wash};
 use crate::ui::{self, El, clickable};
 
 pub use crate::ui::with_tip;
@@ -74,9 +74,9 @@ impl Size {
 fn colors(variant: Variant) -> (Color, Color, Color) {
     let p = p();
     match variant {
-        Variant::Primary | Variant::Danger => (p.ink, p.ink, p.on_ink),
-        Variant::Secondary => (p.surface, p.hover_panel, p.ink),
-        Variant::Ghost => (Color::TRANSPARENT, p.hover, p.ink),
+        Variant::Primary | Variant::Danger => (p.ink, hover_of(p.ink), p.on_ink),
+        Variant::Secondary => (p.surface, hover_of(p.surface), p.ink),
+        Variant::Ghost => (Color::TRANSPARENT, wash(), p.ink),
     }
 }
 
@@ -98,9 +98,7 @@ fn button_box(
     let seed = ("btn", variant as u8);
     let mut b = clickable(on, seed).flex().flex_none().h(px(height)).rounded(px(height / 2.0)).bg(bg).text_color(fg);
     if enabled {
-        if hover != bg {
-            b = b.hover(move |s| s.bg(hover));
-        }
+        b = b.hover(move |s| s.bg(hover));
     } else {
         b = b.opacity(0.45);
     }
@@ -189,7 +187,7 @@ pub fn icon_button_sized(
         .rounded(px(h.min(w) / 2.0))
         .child(svg);
     if enabled {
-        let hover = p().hover;
+        let hover = wash();
         b = b.hover(move |s| s.bg(hover));
     } else {
         b = b.opacity(0.4);
@@ -199,7 +197,7 @@ pub fn icon_button_sized(
 
 /// A sheet that floats over content (a select's list, the jump button): a white panel with the
 /// `line` ring, since a white sheet on a white panel would have no edge, and no shadow.
-pub fn floating(d: Div) -> Div {
+pub fn floating<E: Styled>(d: E) -> E {
     let p = p();
     d.bg(p.surface).text_color(p.ink).border_2().border_color(p.line).rounded(px(R_ROW))
 }
@@ -440,7 +438,7 @@ pub fn swatch(color: Color, size: f32) -> El {
 pub fn bare(content: impl IntoElement, on: Option<Message>, hover_bg: bool) -> Stateful<Div> {
     let mut b = clickable(on, "bare").rounded(px(R_ROW)).child(content);
     if hover_bg {
-        let hover = p().hover;
+        let hover = wash();
         b = b.hover(move |s| s.bg(hover));
     }
     b
@@ -453,10 +451,18 @@ pub fn chip(label: impl Into<String>, dot: Option<Color>, chosen: bool, on: Opti
     if let Some(c) = dot {
         content = content.child(swatch(c, GRID));
     }
-    let text = line(label.clone(), tokens::LABEL, if chosen { p().ink } else { p().muted });
+    // The label takes the chip's colour, so the hover's ink reaches it.
+    let text = plain(label.clone(), tokens::LABEL).overflow_hidden().text_ellipsis();
     content = content.child(if chosen { text.bold() } else { text });
     let ink = p().ink;
-    let mut b = clickable(on, ("chip", &label)).flex().flex_none().items_center().h(g(4.0)).px(g(2.0)).child(content);
+    let mut b = clickable(on, ("chip", &label))
+        .flex()
+        .flex_none()
+        .items_center()
+        .h(g(4.0))
+        .px(g(2.0))
+        .text_color(if chosen { p().ink } else { p().muted })
+        .child(content);
     if !chosen {
         b = b.hover(move |s| s.text_color(ink));
     }
