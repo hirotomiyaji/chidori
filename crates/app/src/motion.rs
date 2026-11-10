@@ -51,6 +51,21 @@ fn touch(key: &SharedString) {
     });
 }
 
+/// Keeps `key`'s slot for this render, for an element whose slot is aimed only while painting.
+pub fn keep(key: &SharedString) {
+    touch(key);
+}
+
+/// A width on the jello (the transcript scrollbar's thickness): the width this frame and whether
+/// it still moves. Only the top is used; a side on a sliver a few pixels wide would be noise.
+pub fn width(key: &SharedString, target: f32, instant: bool) -> (f32, bool) {
+    aim(key, Rect::new(0.0, 0.0, f64::from(target), 0.0), None, instant);
+    match advance(key, 0.0) {
+        Some((top, _, moving)) => (top.w as f32, moving),
+        None => (target, false),
+    }
+}
+
 fn rect_of(b: Bounds<Pixels>, origin: gpui_kit::Point<Pixels>) -> Rect {
     Rect::new(
         f64::from(f32::from(b.origin.x - origin.x)),
@@ -308,5 +323,17 @@ mod tests {
         let key2: SharedString = "test-instant".into();
         aim(&key2, Rect::new(0.0, 0.0, 80.0, 40.0), Some(Rect::new(0.0, 64.0, 80.0, 40.0)), true);
         assert!(!aim(&key2, Rect::new(0.0, 0.0, 80.0, 40.0), None, true));
+    }
+
+    #[test]
+    fn a_width_springs_toward_its_target() {
+        let key: SharedString = "test-width".into();
+        begin_frame();
+        assert_eq!(width(&key, 4.0, false), (4.0, false));
+        let (w, moving) = width(&key, 8.0, false);
+        assert!(moving && w > 4.0 && w < 8.0);
+        let key2: SharedString = "test-width-instant".into();
+        width(&key2, 4.0, true);
+        assert_eq!(width(&key2, 8.0, true), (8.0, false));
     }
 }

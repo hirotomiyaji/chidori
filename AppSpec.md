@@ -114,7 +114,7 @@ items (section 19).
 | FR-32 | Screenshots | Chidori's own window never appears in screenshots or screen shares. |
 | FR-33 | Screenshots | Delete a screenshot or caption it from the transcript. |
 | FR-34 | Screenshots | The camera's menu picks what screenshots take: the recorded app's window, the cursor's screen or all screens (remembered as the setting), or any open window, for the rest of the recording. |
-| FR-40 | Transcript | Live list; auto-scroll pauses when the user scrolls up and 最新へ appears. |
+| FR-40 | Transcript | Live list; auto-scroll pauses when the user scrolls up and 最新へ appears; a scrollbar at the right edge scrolls to any point (dragging it to the end resumes auto-scroll). |
 | FR-41 | Transcript | Edit or delete a line after Stop; every export uses the edits. |
 | FR-50 | Copy | コピー copies plain text; settings choose times and labels. Its chevron (コピー ▾) copies for an agent or as Markdown. |
 | FR-51 | Copy | 「Agent用にコピー」 copies the cleanup prompt followed by the transcript. |

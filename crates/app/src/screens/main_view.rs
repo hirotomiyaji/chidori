@@ -9,6 +9,8 @@ pub mod card;
 pub mod playback;
 #[path = "main/rows.rs"]
 pub mod rows;
+#[path = "main/scrollbar.rs"]
+pub mod scrollbar;
 #[path = "main/source_picker.rs"]
 pub mod source_picker;
 #[path = "main/transcript.rs"]

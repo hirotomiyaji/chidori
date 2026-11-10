@@ -413,6 +413,7 @@ fn act(name: &str, cmd: &Value, window: &mut Window, cx: &mut Cx) -> Result<Valu
 /// need eyes.
 fn state(app: &crate::app::App) -> Value {
     let live = &app.live;
+    let items = &app.main.list.items;
     let partials: Vec<Value> =
         live.partials.iter().map(|(source, line)| json!({ "source": source, "text": line.text })).collect();
     json!({
@@ -435,6 +436,12 @@ fn state(app: &crate::app::App) -> Value {
             "durationMs": live.duration_ms,
             "items": live.items,
             "partials": partials,
+            "scroll": {
+                "following": items.is_following_tail(),
+                "top": -f32::from(items.scroll_px_offset_for_scrollbar().y),
+                "max": f32::from(items.max_offset_for_scrollbar().y),
+                "dragging": app.main.list.bar.dragging(),
+            },
         },
         "viewing": app.viewing_session,
         "banners": app.banners.iter().map(|b| json!({ "id": b.id, "notice": b.notice })).collect::<Vec<_>>(),

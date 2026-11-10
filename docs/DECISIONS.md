@@ -417,6 +417,15 @@ found a reason to deviate.
 - **The card floats over the transcript** (recording, a finished session, one opened from 履歴):
   the lines start below it and scroll up behind it, so only the card's own ground hides them. In
   a strip of its own the card cut them along a straight edge, under its rounded corners too.
+- **The transcript has a scrollbar of its own** (`screens/main/scrollbar.rs`). It shows whenever
+  there is more than a screen: a grey thumb 4 px thick that grows to 8 on the jello as the pointer
+  comes within 48 px of the edge, with no track and no side. A press on the track jumps there and
+  goes on as a drag; dragging away stops following the newest line, and dragging to the end
+  follows it again (GPUI's list does both). The kit's scrollbar, used on the other pages, only
+  thickens on hover, eases off the jello, and leaves the list's padding out of its range, so its
+  thumb stopped a card's height short of the end; the card's room is now the first row's top
+  padding instead. Rows not yet laid out count as 56 px, so a finished session's thumb is about
+  the right length from its first frame.
 - **Switching the source while recording is a menu** (the same as the compact window's): the
   source choices and 「会話として録音」, each switching at once with a toast. It is drawn where
   it fits and native where it doesn't (see "Menus are drawn by the app").
