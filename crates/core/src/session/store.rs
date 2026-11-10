@@ -29,6 +29,9 @@ pub struct SessionStore {
     pending_marks: Mutex<Vec<(String, u64)>>,
 }
 
+/// How long after a line ends a mark whose own utterance made no line may still land on it.
+const MARK_REACH_MS: u64 = 10_000;
+
 /// Which of an utterance's segments `(id, start, end)` a mark made at `t_ms` belongs to: the one
 /// being said then, else the last that had started, else the first.
 pub fn pick_segment<'a>(segments: &[(&'a str, u64, u64)], t_ms: u64) -> Option<&'a str> {
@@ -121,7 +124,9 @@ impl SessionStore {
         pick_segment(&segments, t_ms).map(String::from)
     }
 
-    /// Places the marks waiting for these utterances; one that produced no line drops its mark.
+    /// Places the marks waiting for these utterances. One that produced no line (too short, or
+    /// dropped as an echo of 相手's line) marks the line being said at the mark's time instead,
+    /// else the last one said shortly before it.
     fn resolve_marks(&self, utterances: &[String]) {
         let due: Vec<(String, u64)> = {
             let mut pending = self.pending_marks.lock();
@@ -130,10 +135,28 @@ impl SessionStore {
             due
         };
         for (utt, t_ms) in due {
-            if let Some(id) = self.segment_of(&utt, t_ms) {
+            if let Some(id) = self.segment_of(&utt, t_ms).or_else(|| self.segment_near(t_ms)) {
                 self.set_important(&id, true);
             }
         }
+    }
+
+    /// The line of any source being said at `t_ms`, else the last that ended within
+    /// `MARK_REACH_MS` before it.
+    fn segment_near(&self, t_ms: u64) -> Option<String> {
+        let session = self.session.lock();
+        let segments: Vec<_> = session.segments().collect();
+        segments
+            .iter()
+            .filter(|s| s.t_start_ms <= t_ms && t_ms <= s.t_end_ms)
+            .min_by_key(|s| s.t_start_ms)
+            .or_else(|| {
+                segments
+                    .iter()
+                    .filter(|s| s.t_end_ms <= t_ms && t_ms - s.t_end_ms <= MARK_REACH_MS)
+                    .max_by_key(|s| s.t_end_ms)
+            })
+            .map(|s| s.id.clone())
     }
 
     fn lines_of(session: &Session, mic: bool) -> Vec<(String, u64, u64, String)> {
@@ -392,6 +415,21 @@ mod tests {
             segments: vec![],
         });
         assert!(st.pending_marks.lock().is_empty());
+        assert!(st.snapshot().segments().all(|s| !s.important));
+    }
+
+    #[test]
+    fn a_mark_on_a_dropped_echo_lands_on_the_line_it_echoed() {
+        let dir = tempfile::tempdir().unwrap();
+        let (st, _) = store(dir.path(), true, true);
+        st.on_final(result(SourceId::App, "utt_000001", 10_000, 13_000, "資料を共有します"));
+        // ★ while 自分's mic picked the same words up; that line is dropped as an echo.
+        st.mark_utterances(&["utt_000002".into()], 12_000);
+        st.on_final(result(SourceId::Mic, "utt_000002", 10_300, 13_100, "資料を共有します"));
+        let s = st.snapshot();
+        let marked: Vec<&str> =
+            s.segments().filter(|s| s.important).map(|s| s.utterance_id.as_deref().unwrap()).collect();
+        assert_eq!(marked, ["utt_000001"]);
     }
 
     #[test]

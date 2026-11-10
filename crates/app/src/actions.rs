@@ -54,6 +54,8 @@ pub fn report_error(app: &mut App, e: &AppError, fallback: &str) {
         ErrorCode::MicDenied => app.push_banner(banner(e.code, "micDenied").action("openSettings", "open_mic_privacy")),
         ErrorCode::ModelMissing => app.push_banner(banner(e.code, "modelMissing").action("openModels", "open_models")),
         ErrorCode::DiskFull => app.push_banner(banner(e.code, "diskFull")),
+        // A second press while a start or stop is under way.
+        ErrorCode::Busy => {}
         ErrorCode::Network => app.toast(t("networkError"), Level::Error),
         ErrorCode::ModelChecksum => app.toast(t("checksumError"), Level::Error),
         ErrorCode::AppLoopbackUnsupported => app.toast(crate::i18n::app_capture_unavailable(), Level::Error),

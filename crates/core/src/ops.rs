@@ -78,9 +78,15 @@ pub fn settings(app: &AppHandle) -> Settings {
 /// before and after, so the app can re-register hotkeys or restyle its window when they changed.
 pub fn set_settings(app: &AppHandle, partial: &Value) -> (Settings, Settings) {
     let st = app.state();
-    let old = st.settings.read().clone();
-    let new = crate::settings::merge_partial(&old, partial, &st.default_output_root);
-    *st.settings.write() = new.clone();
+    // Read and written under one lock, so a change made meanwhile (the source a recording
+    // remembers) isn't overwritten with the settings as they were.
+    let (old, new) = {
+        let mut settings = st.settings.write();
+        let old = settings.clone();
+        let new = crate::settings::merge_partial(&old, partial, &st.default_output_root);
+        *settings = new.clone();
+        (old, new)
+    };
     st.persist_settings(app);
     if (new.model_id != old.model_id || new.use_gpu != old.use_gpu) && matches!(&*st.recorder.lock(), Phase::Idle) {
         st.load_selected_model();

@@ -209,7 +209,9 @@ found a reason to deviate.
   into 25 s ones. Measured on the meeting fixture (turbo-q5, RTX 5070 Ti, 2026-10-23): 3 minutes
   of sound in 1.4–3 s from MP4, M4A, WebM, FLAC and Opus, CER 20–25% against one-pass 22.9%.
 - **Unprocessed audio**: a cancelled file, or one that broke off, marks what was queued and what
-  was never read as unprocessed. A file read to its end never does, though containers often state
+  was never read as unprocessed. So does a model that failed to load: finishing (of a recording
+  or a file) waits 2 s for a load that might still be on its way, then saves what it has, as if
+  cancelled, instead of waiting on 「仕上げ中…」 for ever. A file read to its end never does, though containers often state
   a length a little different from the sound's (an MP4's video track may run longer).
 
 ## Sessions and exports
@@ -217,6 +219,14 @@ found a reason to deviate.
 - **`session.json`** also stores the SHA-256 of files Chidori wrote (`written`), which is how
   an edited `transcript.md` is detected and never overwritten.
 - **Rename** changes the title only; the folder keeps its original name.
+- **Whether a session needs recovery comes from its log**, not from `session.json`: a snapshot
+  is left over by a recording that continued the session and then crashed (FR-08), and an edit
+  writes one for a session that never stopped. 履歴 still reads the quicker snapshot when the
+  log's last recording stopped.
+- **Continuing a file's session** keeps the file's times as places in the file and gives the
+  continued recording clock times, as any recording has.
+- **Start and Stop pressed twice** (a double click, a hotkey and the tray) start or stop once:
+  the second press gets `E_BUSY`, which shows nothing.
 - **Projects live beside the sessions** (FR-64): `projects.json` in the output root holds each
   project's ID, name and colour, and a session logs only the ID (`project_set`), so the list
   moves with the folders and a rename shows everywhere at once. Deleting a project leaves its
@@ -233,8 +243,10 @@ found a reason to deviate.
   closed (`SessionCtx::speaking`); the star takes every utterance open at that moment, else the
   one that ended last, and the store keeps the mark until that utterance's text arrives. Whisper
   may split one utterance into several lines; the mark goes to the one spoken at the moment of
-  the press. An utterance that gives no line (too short, a filtered hallucination) drops its
-  mark. Marking from the transcript works on any line, live or after, through `mark_segment`.
+  the press. An utterance that gives no line (too short, a filtered hallucination, 自分's echo
+  of 相手) passes its mark to the line of either side being said at the press, else the last one
+  that ended within 10 s before it; with neither, the mark is dropped. Marking from the
+  transcript works on any line, live or after, through `mark_segment`.
 - **Important lines in exports** start with `★ `, a character an agent reads as plainly as a
   person, rather than bold or highlight markup, which differs between Markdown flavours and
   would be lost in plain text. An important line is its own paragraph, so the star never

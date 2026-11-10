@@ -56,9 +56,14 @@ impl LevelWriter {
         if !header_ok {
             return Self::create(folder);
         }
+        // A crash may have left half a reading: cut it off, or every reading after it would be
+        // read a byte out, 相手 as 自分 and 自分 as the next 相手.
+        let whole = len - (len - MAGIC.len() as u64) % 2;
+        if whole != len {
+            std::fs::OpenOptions::new().write(true).open(&path)?.set_len(whole)?;
+        }
         let out = BufWriter::new(std::fs::OpenOptions::new().append(true).open(&path)?);
-        // A crash may have left half a reading; the next one is written whole after it.
-        Ok(Self { out, next: (len - MAGIC.len() as u64) / 2, last: [0, 0] })
+        Ok(Self { out, next: (whole - MAGIC.len() as u64) / 2, last: [0, 0] })
     }
 
     /// The levels heard at session time `t_ms`, in dBFS (`FLOOR_DBFS` for a side not recorded).
@@ -167,6 +172,24 @@ mod tests {
         assert_eq!(r[1], [-6.0, FLOOR_DBFS]);
         assert_eq!(r[2], [FLOOR_DBFS, FLOOR_DBFS]);
         assert_eq!(r[3], [FLOOR_DBFS, -12.0]);
+    }
+
+    #[test]
+    fn half_a_reading_left_by_a_crash_is_cut_off_before_continuing() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut first = LevelWriter::create(dir.path()).unwrap();
+        first.push(0, -6.0, FLOOR_DBFS).unwrap();
+        first.flush().unwrap();
+        drop(first);
+        let path = dir.path().join(LEVELS_FILE);
+        let mut bytes = std::fs::read(&path).unwrap();
+        bytes.push(encode(-6.0));
+        std::fs::write(&path, bytes).unwrap();
+        let mut more = LevelWriter::open_append(dir.path()).unwrap();
+        more.push(100, FLOOR_DBFS, -12.0).unwrap();
+        more.flush().unwrap();
+        let r = read(dir.path()).unwrap();
+        assert_eq!(r, vec![[-6.0, FLOOR_DBFS], [FLOOR_DBFS, -12.0]]);
     }
 
     #[test]

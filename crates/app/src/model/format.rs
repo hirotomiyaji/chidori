@@ -27,10 +27,12 @@ pub fn clock_at(started_at: &str, t_ms: u64) -> String {
 /// Clock times of a session: from its start, or from the start of the continuation an offset
 /// falls in (FR-08). A session from a file (FR-18) gives places in the file instead.
 pub fn session_clock(started_at: &str, continued: &[Continuation], from_file: bool, t_ms: u64) -> String {
-    if from_file {
+    let part = continued.iter().rev().find(|c| c.at_ms <= t_ms);
+    // A file's own times are places in it; a recording that continued it (FR-08) has clock times.
+    if from_file && part.is_none() {
         return hms(t_ms);
     }
-    match continued.iter().rev().find(|c| c.at_ms <= t_ms) {
+    match part {
         Some(part) => clock_at(&part.started_at, t_ms - part.at_ms),
         None => clock_at(started_at, t_ms),
     }
@@ -171,6 +173,15 @@ mod tests {
         assert_eq!(timer_text(3_723_000), "1:02:03");
         assert_eq!(clock_at("2026-10-02T15:13:00+09:00", 61_000), "15:14:01");
         assert_eq!(date_time_of("2026-10-02T15:13:00+09:00"), "2026-10-02 15:13");
+    }
+
+    #[test]
+    fn a_file_session_shows_file_places_then_the_continued_recording_clock() {
+        let continued = [Continuation { at_ms: 600_000, started_at: "2026-10-02T15:13:00+09:00".into() }];
+        let start = "2026-10-01T09:00:00+09:00";
+        assert_eq!(session_clock(start, &continued, true, 61_000), "00:01:01");
+        assert_eq!(session_clock(start, &continued, true, 661_000), "15:14:01");
+        assert_eq!(session_clock(start, &[], false, 61_000), "09:01:01");
     }
 
     #[test]

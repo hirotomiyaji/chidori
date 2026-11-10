@@ -13,7 +13,7 @@ use super::clock::{ClockStats, Piece, StreamClock, downmix};
 use super::level::{FLOOR_DBFS, PeakMeter, rms_dbfs};
 use super::resample::{MonoResampler, TARGET_RATE};
 use super::source::RawChunk;
-use crate::asr::worker::{AsrWorker, Job, JobKind, SessionCtx};
+use crate::asr::worker::{AsrWorker, FinalResult, Job, JobKind, PieceInfo, SessionCtx};
 use crate::platform;
 use crate::segmenter::{SegEvent, Segmenter, SegmenterConfig};
 use crate::session::audio::AudioChunk;
@@ -370,9 +370,19 @@ impl Dsp {
                     retries: 0,
                 });
             }
-            SegEvent::Discarded { .. } => {
-                self.current = None;
+            SegEvent::Discarded { start_sample } => {
                 self.ctx.speaking.lock().entry(self.params.source).or_default().open = None;
+                // Said to the session as an utterance with no line, as the worker says one it
+                // dropped, so a mark made while it was spoken lands elsewhere (FR-07).
+                if let Some(utterance_id) = self.current.take() {
+                    let start_ms = start_sample * 1000 / TARGET_RATE as u64;
+                    let end_ms = self.seg.position() * 1000 / TARGET_RATE as u64;
+                    self.ctx.sink.on_final(FinalResult {
+                        source: self.params.source,
+                        pieces: vec![PieceInfo { utterance_id, start_ms, end_ms: end_ms.max(start_ms) }],
+                        segments: Vec::new(),
+                    });
+                }
             }
         }
     }
@@ -425,7 +435,7 @@ impl Dsp {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::asr::worker::{AsrConfig, FinalResult, SegmentSink};
+    use crate::asr::worker::{AsrConfig, SegmentSink};
     use crate::settings::Language;
 
     struct Collect(Mutex<Vec<Job>>);
