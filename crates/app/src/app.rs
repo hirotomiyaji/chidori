@@ -246,6 +246,9 @@ pub fn run(on_start: impl FnOnce() + 'static) {
             // larger minimum is kept by `AppView::keep_limits`.
             window_min_size: Some(size(px(COMPACT_MIN.width), px(COMPACT_MIN.height))),
             is_resizable: true,
+            // A driven test run stays out of sight, or at least out of the way.
+            show: crate::drive::visible(),
+            focus: !crate::drive::on(),
             app_id: Some("dev.yusai.chidori".into()),
             ..WindowOptions::default()
         };
@@ -520,7 +523,9 @@ impl App {
                 Task::none()
             }
             Message::Popup(items, at) => {
-                if let Some(hwnd) = self.hwnd {
+                if !crate::drive::popup(&items)
+                    && let Some(hwnd) = self.hwnd
+                {
                     menu::popup(hwnd, &items, at);
                 }
                 Task::none()
@@ -1008,6 +1013,11 @@ impl AppView {
             })
             .detach();
         }
+        #[cfg(feature = "drive")]
+        {
+            let handle = window.window_handle();
+            cx.spawn(async move |_, cx| crate::drive::serve(handle, cx).await).detach();
+        }
         let hwnd = hwnd_of(window);
         ui::run(task, cx);
         if let Some(h) = hwnd {
@@ -1031,6 +1041,8 @@ impl AppView {
                 }
             }
             Cmd::Minimize => window.minimize_window(),
+            // A driven run's window is shown or not for the whole run.
+            Cmd::Hide | Cmd::Show if crate::drive::on() => {}
             Cmd::Hide => {
                 if let Some(h) = self.app.hwnd {
                     native::window::set_visible(h, false);

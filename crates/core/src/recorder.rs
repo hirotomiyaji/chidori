@@ -593,8 +593,11 @@ fn start_sources(active: &mut Active, st: &AppState, start_ms: u64) -> Result<()
             track: None,
         };
         let dsp = dsp::spawn(rx, params, active.ctx.clone(), sink.clone(), active.store.ids.clone(), st.levels.clone());
-        let mut source: Box<dyn AudioSource> =
-            crate::audio::open_source(p.id, p.target.clone(), active.status_tx.clone());
+        let stand_in = st.stand_in.lock().clone();
+        let mut source: Box<dyn AudioSource> = match stand_in {
+            Some(files) => files.source(p.id),
+            None => crate::audio::open_source(p.id, p.target.clone(), active.status_tx.clone()),
+        };
         if let Err(err) = source.start(tx) {
             let _ = dsp.join();
             stop_sources(active);

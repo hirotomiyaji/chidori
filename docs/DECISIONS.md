@@ -13,6 +13,12 @@ found a reason to deviate.
 - **`--show-in-captures`** makes the window show in screenshots and screen sharing for that run,
   whatever 設定's 「画面共有・スクショに映さない」 says (on by default), and saves nothing. It is
   for capturing the app itself, in testing and docs.
+- **A driven run** (`--drive <dir>`, only in builds with the `drive` feature; `docs/DRIVE.md`) is
+  how the app is tried without a hand on it: commands from a file become GPUI's own input events,
+  the window draws itself to a PNG, and recordings hear sound files. It needs GPUI's
+  `test-support` (for `render_to_image` and `simulate_next_frame`), which is why it is a feature
+  and not a flag of every build. A hidden window gets no frames from the system, so the driven
+  run draws one every 16 ms itself, or the jello would never move.
 - **GPUI instead of Iced** (after 0.6). GPUI (Zed's UI framework, through `gpui-kit`, which pins
   a GPUI snapshot and adds `gpui-component`'s text boxes, scrollbars and tooltips) replaces Iced.
   The app keeps Iced's shape: one `App`, `Message`s handled in `App::update`, and `Task`s it
