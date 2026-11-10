@@ -56,7 +56,7 @@ pub fn keep(key: &SharedString) {
     touch(key);
 }
 
-/// A width on the jello (the transcript scrollbar's thickness): the width this frame and whether
+/// A width on the jello (the scrollbars' thickness): the width this frame and whether
 /// it still moves. Only the top is used; a side on a sliver a few pixels wide would be noise.
 pub fn width(key: &SharedString, target: f32, instant: bool) -> (f32, bool) {
     aim(key, Rect::new(0.0, 0.0, f64::from(target), 0.0), None, instant);

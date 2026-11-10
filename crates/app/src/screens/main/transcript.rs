@@ -24,7 +24,6 @@ use gpui_kit::{
 };
 
 use super::rows::{self, Row, RowKind, Rows};
-use super::scrollbar::{self, Bar};
 use crate::actions::Action;
 use crate::app::{App, Message};
 use crate::i18n::{t, tf};
@@ -33,6 +32,7 @@ use crate::model::format::{day_of, day_text};
 use crate::model::transcript::Transcript;
 use crate::motion::{self, Look};
 use crate::screens::popup::Menu;
+use crate::scrollbar::{self, Bar};
 use crate::task::{self, Task};
 use crate::theme::{self, Color, GRID, Ink, R_NOTCH, R_ROW, g, line, mix, p, plain, tokens};
 use crate::ui::{self, El, Field, Ui, clickable};

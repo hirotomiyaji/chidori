@@ -20,7 +20,7 @@ found a reason to deviate.
   and not a flag of every build. A hidden window gets no frames from the system, so the driven
   run draws one every 16 ms itself, or the jello would never move.
 - **GPUI instead of Iced** (after 0.6). GPUI (Zed's UI framework, through `gpui-kit`, which pins
-  a GPUI snapshot and adds `gpui-component`'s text boxes, scrollbars and tooltips) replaces Iced.
+  a GPUI snapshot and adds `gpui-component`'s text boxes and tooltips) replaces Iced.
   The app keeps Iced's shape: one `App`, `Message`s handled in `App::update`, and `Task`s it
   hands back (`task.rs`); `ui.rs` turns GPUI's events into those messages, queued and handled
   after GPUI's event, so an update never runs inside another. Text boxes are GPUI entities, kept
@@ -417,15 +417,21 @@ found a reason to deviate.
 - **The card floats over the transcript** (recording, a finished session, one opened from 履歴):
   the lines start below it and scroll up behind it, so only the card's own ground hides them. In
   a strip of its own the card cut them along a straight edge, under its rounded corners too.
-- **The transcript has a scrollbar of its own** (`screens/main/scrollbar.rs`). It shows whenever
-  there is more than a screen: a grey thumb 4 px thick that grows to 8 on the jello as the pointer
-  comes within 48 px of the edge, with no track and no side. A press on the track jumps there and
-  goes on as a drag; dragging away stops following the newest line, and dragging to the end
-  follows it again (GPUI's list does both). The kit's scrollbar, used on the other pages, only
-  thickens on hover, eases off the jello, and leaves the list's padding out of its range, so its
-  thumb stopped a card's height short of the end; the card's room is now the first row's top
-  padding instead. Rows not yet laid out count as 56 px, so a finished session's thumb is about
-  the right length from its first frame.
+- **Every scrolling area has the same scrollbar** (`scrollbar.rs`): the transcript, 設定 (each
+  tab and the model list), 履歴, the setup wizard, the start screen and dropdowns. It shows
+  whenever there is more than a screen: a grey thumb 4 px thick that grows to 8 on the jello as
+  the pointer comes within 48 px of the edge, with no track and no side, and stays thin while
+  something else (a dropdown, a dialog, a menu) is drawn over the area. A press on the track jumps
+  there and goes on as a drag. The kit's scrollbar only thickens on hover and eases off the jello,
+  and its scroll handle is private, so a page's body is the app's own scroll area, laid out as the
+  kit's (its bounce at the ends on a Mac included). Areas are kept by a key and dropped when not
+  drawn, so a page, a 設定 tab or a wizard step opens at its top. The 履歴 project chips (sideways,
+  with no bar before either) and the kit's multi-line text box keep what they have.
+- **On the transcript, the bar drives GPUI's list**: dragging away stops following the newest
+  line, and dragging to the end follows it again. The kit's bar left the list's padding out of its
+  range, so its thumb stopped a card's height short of the end; the card's room is now the first
+  row's top padding instead. Rows not yet laid out count as 56 px, so a finished session's thumb
+  is about the right length from its first frame.
 - **Switching the source while recording is a menu** (the same as the compact window's): the
   source choices and 「会話として録音」, each switching at once with a toast. It is drawn where
   it fits and native where it doesn't (see "Menus are drawn by the app").

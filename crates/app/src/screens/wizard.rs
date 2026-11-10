@@ -279,7 +279,7 @@ pub fn view(app: &App) -> El {
     col()
         .size_full()
         .child(head)
-        .child(form::scroll(div().w_full().py(px(14.0)).px(px(18.0)).child(body)))
+        .child(form::scroll(&format!("wizard-{i}"), div().w_full().py(px(14.0)).px(px(18.0)).child(body)))
         .child(hairline())
         .child(footer(app))
         .into_any_element()

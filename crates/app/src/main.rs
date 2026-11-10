@@ -40,6 +40,7 @@ mod paint;
 #[cfg(test)]
 mod preview;
 mod screens;
+mod scrollbar;
 mod task;
 mod theme;
 mod ui;

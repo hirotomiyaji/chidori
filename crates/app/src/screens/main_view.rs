@@ -9,8 +9,6 @@ pub mod card;
 pub mod playback;
 #[path = "main/rows.rs"]
 pub mod rows;
-#[path = "main/scrollbar.rs"]
-pub mod scrollbar;
 #[path = "main/source_picker.rs"]
 pub mod source_picker;
 #[path = "main/transcript.rs"]
@@ -23,7 +21,6 @@ use chidori_core::events::UiState;
 use chidori_core::ops;
 use chidori_core::screenshot::WindowInfo;
 use chidori_core::settings::{Settings, SourceMode};
-use gpui_kit::component::scroll::ScrollableElement as _;
 use gpui_kit::{InteractiveElement, IntoElement, ParentElement, Styled, WindowControlArea, div, px};
 
 use self::card::{CardMsg, CardState, SessionCtx};
@@ -40,7 +37,7 @@ use crate::screens::notices;
 use crate::screens::titlebar;
 use crate::task::Task;
 use crate::theme::{GRID, Ink, R_PANEL, R_ROW, g, line, p, plain, tokens};
-use crate::ui::{El, KeyPress, Ui, clickable, uid};
+use crate::ui::{El, KeyPress, Ui, clickable};
 use crate::widgets::{col, fill, row, with_tip};
 
 /// What the main view shows: nothing yet, a recording, or the session that just finished.
@@ -443,13 +440,7 @@ pub fn view(app: &App, ui: &mut Ui) -> El {
     let banners = notices::banners(app);
     match ph {
         Phase::Start => {
-            let top = div()
-                .id(uid("start"))
-                .flex_1()
-                .min_h_0()
-                .w_full()
-                .overflow_y_scrollbar()
-                .child(div().px(g(2.0)).pt(g(1.0)).child(source_picker::picker(app)));
+            let top = crate::scrollbar::area("start", div().px(g(2.0)).pt(g(1.0)).child(source_picker::picker(app)));
             col()
                 .size_full()
                 .child(banners)

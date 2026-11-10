@@ -331,11 +331,18 @@ where
             });
             list = list.child(item);
         }
-        let list =
-            list.id(ui::uid(("select-list", &key))).overflow_y_scroll().occlude().on_mouse_down_out(|_, window, _| {
+        let (handle, bar) = crate::scrollbar::handle_bar(&format!("select-{key}"));
+        let list = list
+            .id(ui::uid(("select-list", &key)))
+            .track_scroll(&handle)
+            .overflow_y_scroll()
+            .occlude()
+            .on_mouse_down_out(|_, window, _| {
                 OPEN_SELECT.with(|o| *o.borrow_mut() = None);
                 window.refresh();
             });
+        // The bar goes over the list's right edge, inside its sheet.
+        let list = div().relative().child(list).child(crate::scrollbar::bar(&handle, &bar, 0.0));
         let sheet = motion::enter(
             format!("select-sheet-{key}"),
             list,

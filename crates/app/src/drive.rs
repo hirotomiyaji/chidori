@@ -443,6 +443,10 @@ fn state(app: &crate::app::App) -> Value {
                 "dragging": app.main.list.bar.dragging(),
             },
         },
+        "scroll": crate::scrollbar::areas()
+            .into_iter()
+            .map(|(key, top, max, dragging)| (key.to_string(), json!({ "top": top, "max": max, "dragging": dragging })))
+            .collect::<serde_json::Map<_, _>>(),
         "viewing": app.viewing_session,
         "banners": app.banners.iter().map(|b| json!({ "id": b.id, "notice": b.notice })).collect::<Vec<_>>(),
         "toasts": app.toasts.iter().map(|t| t.text.clone()).collect::<Vec<_>>(),

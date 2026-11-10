@@ -3,12 +3,11 @@
 
 use std::fmt;
 
-use gpui_kit::component::scroll::ScrollableElement as _;
 use gpui_kit::{Div, InteractiveElement, IntoElement, ParentElement, Styled, div, px};
 
 use crate::app::Message;
 use crate::theme::{self, Ink, R_PANEL, R_TAG, g, line, p, tokens};
-use crate::ui::{El, clickable, uid};
+use crate::ui::{El, clickable};
 
 /// The title on the ground, with a quiet line beside it (`2 / 6` in the wizard).
 pub fn head(title: String, sub: Option<String>) -> El {
@@ -20,9 +19,10 @@ pub fn head(title: String, sub: Option<String>) -> El {
     div().w_full().flex_none().px(g(3.0)).py(g(1.0)).child(r).into_any_element()
 }
 
-/// A page body that scrolls, with the thin scrollbar of the rest of the app.
-pub fn scroll(content: impl IntoElement) -> El {
-    div().id(uid("scroll")).flex_1().min_h_0().w_full().overflow_y_scrollbar().child(content).into_any_element()
+/// A page body that scrolls, with the app's scrollbar. `key` names it: it keeps its place while
+/// shown, and another key (another tab or step) starts at the top.
+pub fn scroll(key: &str, content: impl IntoElement) -> El {
+    crate::scrollbar::area(key, content)
 }
 
 /// One choice in a dropdown: what is saved, and what it says.

@@ -1,15 +1,19 @@
-//! The transcript's scrollbar: a thin grey thumb at the list's right edge that thickens on the jello
-//! as the pointer comes near, and can be dragged or clicked to any point (FR-40). It reads GPUI's
+//! The scrollbar every scrolling area has (the transcript, 設定, 履歴, the setup wizard, the start
+//! screen, dropdowns): a thin grey thumb at the area's right edge that thickens on the jello as the
+//! pointer comes near, and can be dragged or clicked to any point. On the transcript it reads GPUI's
 //! own list numbers, so dragging away stops following the newest line and dragging to the end
-//! follows it again. The kit's scrollbar thickens only on hover, off the jello, and leaves the
-//! list's padding out of its range; see `docs/DECISIONS.md` → UI.
+//! follows it again (FR-40). The kit's scrollbar thickens only on hover, off the jello, and leaves
+//! a list's padding out of its range; see `docs/DECISIONS.md` → UI.
 
-use std::cell::Cell;
+use std::cell::{Cell, RefCell};
+use std::collections::HashMap;
 use std::rc::Rc;
 
+use gpui_kit::base::InteractiveElementExt as _;
 use gpui_kit::{
-    Bounds, CursorStyle, DispatchPhase, Hitbox, HitboxBehavior, IntoElement, MouseButton, MouseDownEvent,
-    MouseExitEvent, MouseMoveEvent, MouseUpEvent, SharedString, Styled, canvas, fill, point, px, size,
+    Bounds, CursorStyle, DispatchPhase, Hitbox, HitboxBehavior, InteractiveElement, IntoElement, MouseButton,
+    MouseDownEvent, MouseExitEvent, MouseMoveEvent, MouseUpEvent, ParentElement, Pixels, ScrollHandle, SharedString,
+    StatefulInteractiveElement, Styled, Window, canvas, div, fill, point, px, size,
 };
 
 use crate::motion;
@@ -30,6 +34,58 @@ const NEAR: f32 = 6.0 * GRID;
 const MIN_LEN: f32 = 5.0 * GRID;
 /// The track's margin at its top and bottom.
 const MARGIN: f32 = GRID;
+
+/// What scrolls under a bar, in the bar's terms: offsets grow downward from 0.
+pub trait Scrolled: Clone + 'static {
+    /// The view's height.
+    fn view_h(&self) -> f32;
+    /// How far it can scroll.
+    fn extent(&self) -> f32;
+    /// How far it is scrolled; past `extent` while a list follows its end.
+    fn offset(&self) -> f32;
+    fn scroll_to(&self, offset: f32);
+    fn drag_started(&self) {}
+    fn drag_ended(&self) {}
+}
+
+/// The transcript's list. Its scrollbar numbers hold the length still while dragged, and dragging
+/// to the end follows the newest line again.
+impl Scrolled for gpui_kit::ListState {
+    fn view_h(&self) -> f32 {
+        f32::from(self.viewport_bounds().size.height)
+    }
+    fn extent(&self) -> f32 {
+        f32::from(self.max_offset_for_scrollbar().y)
+    }
+    fn offset(&self) -> f32 {
+        -f32::from(self.scroll_px_offset_for_scrollbar().y)
+    }
+    fn scroll_to(&self, offset: f32) {
+        self.set_offset_from_scrollbar(point(px(0.0), px(-offset)));
+    }
+    fn drag_started(&self) {
+        self.scrollbar_drag_started();
+    }
+    fn drag_ended(&self) {
+        self.scrollbar_drag_ended();
+    }
+}
+
+/// A page's scrolling body.
+impl Scrolled for ScrollHandle {
+    fn view_h(&self) -> f32 {
+        f32::from(self.bounds().size.height)
+    }
+    fn extent(&self) -> f32 {
+        f32::from(self.max_offset().y)
+    }
+    fn offset(&self) -> f32 {
+        -f32::from(ScrollHandle::offset(self).y)
+    }
+    fn scroll_to(&self, offset: f32) {
+        self.set_offset(point(ScrollHandle::offset(self).x, px(-offset)));
+    }
+}
 
 /// Where the thumb is drawn in a track.
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -108,36 +164,45 @@ impl Bar {
     }
 }
 
-/// How far the pointer at (`x`, `y`) is from the right edge of `b`, when it is beside the list.
-fn distance(b: Bounds<gpui_kit::Pixels>, x: f32, y: f32) -> Option<f32> {
+/// How far the pointer at (`x`, `y`) is from the right edge of `b`, when it is over the area and
+/// nothing drawn on top of it (`near` being the area's own hitbox, `strip` the bar's, which is in
+/// front of it).
+fn reach(near: &Hitbox, strip: &Hitbox, b: Bounds<Pixels>, window: &Window, x: f32, y: f32) -> Option<f32> {
+    if near.is_hovered(window) || strip.is_hovered(window) { distance(b, x, y) } else { None }
+}
+
+/// How far the pointer at (`x`, `y`) is from the right edge of `b`, when it is beside the area.
+fn distance(b: Bounds<Pixels>, x: f32, y: f32) -> Option<f32> {
     let (top, bottom, right) = (f32::from(b.top()), f32::from(b.bottom()), f32::from(b.right()));
     (y >= top && y <= bottom && x <= right && x >= f32::from(b.left())).then_some(right - x)
 }
 
-/// The scrollbar over a list, `top` being the room the floating card takes over the list's top.
-/// It goes after the list, so it is on top of the rows and takes the press first.
-pub fn bar(items: &gpui_kit::ListState, bar: &Rc<Bar>, top: f32) -> El {
+/// The scrollbar over what `items` scrolls, `top` being room at the top it leaves alone (the
+/// transcript's floating card). It goes after the scrolling element, so it is on top of what
+/// scrolls and takes the press first.
+pub fn bar<S: Scrolled>(items: &S, bar: &Rc<Bar>, top: f32) -> El {
     motion::keep(&bar.key);
-    let (items_p, bar_p) = (items.clone(), bar.clone());
+    let items_p = items.clone();
     canvas(
         move |bounds, window, _| {
-            let view = f32::from(items_p.viewport_bounds().size.height);
-            let extent = f32::from(items_p.max_offset_for_scrollbar().y);
-            let offset = -f32::from(items_p.scroll_px_offset_for_scrollbar().y);
+            let (view, extent, offset) = (items_p.view_h(), items_p.extent(), items_p.offset());
             let track_top = f32::from(bounds.top()) + top + MARGIN;
             let track_h = f32::from(bounds.bottom()) - MARGIN - track_top;
             let g = geometry(track_top, track_h, view, extent)?;
             let strip = Bounds::new(point(bounds.right() - px(ZONE), px(track_top)), size(px(ZONE), px(track_h)));
+            // Says whether the area is the one under the pointer, not something drawn over it.
+            let near = window.insert_hitbox(bounds, HitboxBehavior::Normal);
             let hitbox = window.insert_hitbox(strip, HitboxBehavior::BlockMouseExceptScroll);
-            let m = window.mouse_position();
-            let target = thickness(distance(bounds, f32::from(m.x), f32::from(m.y)), bar_p.dragging());
-            bar_p.aimed.set(target);
-            Some((g, offset, hitbox, target))
+            Some((g, offset, hitbox, near))
         },
         {
             let (items, bar) = (items.clone(), bar.clone());
-            move |bounds, state: Option<(Geometry, f32, Hitbox, f32)>, window, cx| {
-                let Some((g, offset, hitbox, target)) = state else { return };
+            move |bounds, state: Option<(Geometry, f32, Hitbox, Hitbox)>, window, cx| {
+                let Some((g, offset, hitbox, near)) = state else { return };
+                let m = window.mouse_position();
+                let d = reach(&near, &hitbox, bounds, window, f32::from(m.x), f32::from(m.y));
+                let target = thickness(d, bar.dragging());
+                bar.aimed.set(target);
                 let (w, moving) = motion::width(&bar.key, target, cx.reduce_motion());
                 if moving {
                     window.request_animation_frame();
@@ -148,6 +213,7 @@ pub fn bar(items: &gpui_kit::ListState, bar: &Rc<Bar>, top: f32) -> El {
                 let color = if bar.dragging() { p().muted } else { mix(p().muted, p().faint, heat) };
                 window.paint_quad(fill(thumb, color).corner_radii(px(w / 2.0)));
                 window.set_cursor_style(CursorStyle::Arrow, &hitbox);
+                let strip2 = hitbox.clone();
 
                 let (it, b) = (items.clone(), bar.clone());
                 window.on_mouse_event(move |e: &MouseDownEvent, phase, window, cx| {
@@ -162,14 +228,14 @@ pub fn bar(items: &gpui_kit::ListState, bar: &Rc<Bar>, top: f32) -> El {
                     } else {
                         // A press on the track jumps there, and goes on as a drag.
                         let grab = g.len / 2.0;
-                        it.set_offset_from_scrollbar(point(px(0.0), px(-g.offset_at(y, grab))));
+                        it.scroll_to(g.offset_at(y, grab));
                         grab
                     };
-                    it.scrollbar_drag_started();
+                    it.drag_started();
                     b.drag.set(Some(grab));
                     window.refresh();
                 });
-                let (it, b) = (items.clone(), bar.clone());
+                let (it, b, near2) = (items.clone(), bar.clone(), near.clone());
                 window.on_mouse_event(move |e: &MouseMoveEvent, phase, window, cx| {
                     if phase != DispatchPhase::Bubble {
                         return;
@@ -177,19 +243,16 @@ pub fn bar(items: &gpui_kit::ListState, bar: &Rc<Bar>, top: f32) -> El {
                     if let Some(grab) = b.drag.get() {
                         if e.pressed_button != Some(MouseButton::Left) {
                             // Let go outside the window.
-                            it.scrollbar_drag_ended();
+                            it.drag_ended();
                             b.drag.set(None);
                         } else {
-                            it.set_offset_from_scrollbar(point(
-                                px(0.0),
-                                px(-g.offset_at(f32::from(e.position.y), grab)),
-                            ));
+                            it.scroll_to(g.offset_at(f32::from(e.position.y), grab));
                             cx.stop_propagation();
                         }
                         window.refresh();
                         return;
                     }
-                    let d = distance(bounds, f32::from(e.position.x), f32::from(e.position.y));
+                    let d = reach(&near2, &strip2, bounds, window, f32::from(e.position.x), f32::from(e.position.y));
                     if thickness(d, false) != b.aimed.get() {
                         window.refresh();
                     }
@@ -197,7 +260,7 @@ pub fn bar(items: &gpui_kit::ListState, bar: &Rc<Bar>, top: f32) -> El {
                 let (it, b) = (items.clone(), bar.clone());
                 window.on_mouse_event(move |e: &MouseUpEvent, phase, window, _| {
                     if phase == DispatchPhase::Bubble && e.button == MouseButton::Left && b.dragging() {
-                        it.scrollbar_drag_ended();
+                        it.drag_ended();
                         b.drag.set(None);
                         window.refresh();
                     }
@@ -218,9 +281,115 @@ pub fn bar(items: &gpui_kit::ListState, bar: &Rc<Bar>, top: f32) -> El {
     .into_any_element()
 }
 
+/// A scrolling area kept between renders by its key.
+struct Area {
+    handle: ScrollHandle,
+    bar: Rc<Bar>,
+    seen: u64,
+}
+
+thread_local! {
+    static AREAS: RefCell<HashMap<SharedString, Area>> = RefCell::new(HashMap::new());
+    static RENDER: Cell<u64> = const { Cell::new(0) };
+}
+
+/// A new render: areas its last render didn't build let go, so a page opened again starts at its
+/// top and a drag can't outlive its page.
+pub fn begin_frame() {
+    let now = RENDER.with(|r| {
+        r.set(r.get() + 1);
+        r.get()
+    });
+    AREAS.with(|a| a.borrow_mut().retain(|_, area| area.seen + 1 >= now));
+}
+
+/// The scroll handle and bar state of the area `key`, made when new.
+pub fn handle_bar(key: &str) -> (ScrollHandle, Rc<Bar>) {
+    let now = RENDER.with(Cell::get);
+    AREAS.with(|a| {
+        let mut a = a.borrow_mut();
+        let area = a.entry(SharedString::from(key.to_string())).or_insert_with(|| Area {
+            handle: ScrollHandle::new(),
+            bar: Rc::new(Bar::new(key)),
+            seen: now,
+        });
+        area.seen = now;
+        (area.handle.clone(), area.bar.clone())
+    })
+}
+
+/// How far each area is scrolled, how far it can scroll and whether its bar is dragged (for a
+/// driven run's `state`).
+#[cfg_attr(not(feature = "drive"), allow(dead_code))]
+pub fn areas() -> Vec<(SharedString, f32, f32, bool)> {
+    AREAS.with(|a| {
+        a.borrow()
+            .iter()
+            .map(|(k, area)| (k.clone(), Scrolled::offset(&area.handle), area.handle.extent(), area.bar.dragging()))
+            .collect()
+    })
+}
+
+/// A page body that scrolls, filling its parent, with the bar over its right edge. Laid out as the
+/// kit's scroll area is (its bounce at the ends on a Mac included), less the kit's bar.
+pub fn area(key: &str, content: impl IntoElement) -> El {
+    let (handle, state) = handle_bar(key);
+    let scroll = div()
+        .id(gpui_kit::ElementId::Name(format!("{key}-area").into()))
+        .size_full()
+        .flex()
+        .flex_col()
+        .track_scroll(&handle)
+        .overflow_y_scroll()
+        .lock_scroll_axis()
+        .child(div().flex_none().w_full().min_h_full().child(content));
+    div()
+        .relative()
+        .flex_1()
+        .min_h_0()
+        .w_full()
+        .flex()
+        .flex_col()
+        .overflow_hidden()
+        .child(gpui_kit::base::ScrollBounce::new(
+            gpui_kit::ElementId::Name(format!("{key}-bounce").into()),
+            &handle,
+            scroll,
+        ))
+        .child(bar(&handle, &state, 0.0))
+        .into_any_element()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_scroll_handle_takes_offsets_downward() {
+        let h = ScrollHandle::new();
+        assert_eq!(h.extent(), 0.0);
+        h.scroll_to(30.0);
+        assert_eq!(ScrollHandle::offset(&h).y, px(-30.0));
+        assert_eq!(Scrolled::offset(&h), 30.0);
+    }
+
+    #[test]
+    fn an_area_keeps_its_state_between_renders_and_lets_go_when_not_built() {
+        begin_frame();
+        let (h, b) = handle_bar("t-area");
+        h.scroll_to(30.0);
+        begin_frame();
+        let (h2, b2) = handle_bar("t-area");
+        assert_eq!(Scrolled::offset(&h2), 30.0);
+        assert!(Rc::ptr_eq(&b, &b2));
+        begin_frame();
+        begin_frame();
+        let (h3, _) = handle_bar("t-area");
+        assert_eq!(Scrolled::offset(&h3), 0.0);
+        // Another key has its own.
+        let (other, _) = handle_bar("t-other");
+        assert_eq!(Scrolled::offset(&other), 0.0);
+    }
 
     #[test]
     fn a_reset_lets_go_of_a_drag() {
