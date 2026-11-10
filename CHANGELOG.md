@@ -4,6 +4,11 @@ All notable changes are listed here. Versions follow [SemVer](https://semver.org
 
 ## [Unreleased]
 
+### Fixed
+
+- 設定's sections all show: in a narrow window the chips wrap onto a second line instead of running off its edge, which hid 出力.
+- 後で on the recovery dialog puts off every interrupted recording at once instead of one per press, and the dialog says how many more are waiting.
+
 ## [0.8.1] - 2026-11-08
 
 ### Added

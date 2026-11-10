@@ -8,7 +8,7 @@ use chidori_core::export::LabelMode;
 use chidori_core::ops;
 use chidori_core::session::model::SourceId;
 use chidori_core::settings::{Hotkeys, Language, Layout, Locale, ScreenshotTarget, Settings};
-use gpui_kit::{InteractiveElement, IntoElement, ParentElement, StatefulInteractiveElement, Styled, div, px};
+use gpui_kit::{InteractiveElement, IntoElement, ParentElement, Styled, div, px};
 use serde_json::{Value, json};
 
 use super::form::{self, Opt, choose, opt};
@@ -21,8 +21,8 @@ use crate::theme::{self, Ink, g, line, p, tokens};
 pub use crate::ui::KeyPress;
 use crate::ui::{self, El, Field, Ui, clickable};
 use crate::widgets::{
-    Size, Variant, btn, chip, chips, col, field, fill, icon_button, panel, row, section, setting_row, toggle_row,
-    with_tip,
+    Size, Variant, btn, chip, chips_wrapped, col, field, fill, icon_button, panel, row, section, setting_row,
+    toggle_row, with_tip,
 };
 
 const VOCAB: &str = "settings-vocab";
@@ -341,8 +341,8 @@ pub fn view(app: &App, ui: &mut Ui) -> El {
     root.into_any_element()
 }
 
-/// The sections as chips in a row that scrolls sideways, each saying what it is set to when
-/// pointed at; 文字起こし stays chosen while its model list is open.
+/// The sections as chips that wrap onto a second line when the window is too narrow for all six,
+/// each saying what it is set to when pointed at; 文字起こし stays chosen while its model list is open.
 fn section_chips(app: &App) -> El {
     let current = if app.settings_tab == SettingsTab::Models { SettingsTab::Transcription } else { app.settings_tab };
     let mut chosen = None;
@@ -356,19 +356,17 @@ fn section_chips(app: &App) -> El {
             }
             let attention = *tab == SettingsTab::Hotkeys && hotkeys_taken(app);
             let label = if attention { format!("{} !", t(key)) } else { t(key) };
-            with_tip(div().child(chip(label, None, here, Some(msg(Msg::Open(*tab))))), summary(app, *tab))
+            with_tip(div().flex_none().child(chip(label, None, here, Some(msg(Msg::Open(*tab))))), summary(app, *tab))
                 .into_any_element()
         })
         .collect();
     div()
-        .id("settings-chips")
         .flex_none()
         .w_full()
         .px(g(2.0))
         .pt(g(1.0))
         .pb(g(1.0))
-        .overflow_x_scroll()
-        .child(chips("settings", items, chosen))
+        .child(chips_wrapped("settings", items, chosen))
         .into_any_element()
 }
 

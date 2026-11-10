@@ -31,7 +31,8 @@ const NAME_MAX: usize = 40;
 #[derive(Debug, Default)]
 pub struct State {
     open: Option<Dialog>,
-    /// Sessions that ended in a crash, offered one at a time at launch (flow D).
+    /// Sessions that ended in a crash, offered one at a time at launch (flow D); 後で puts off all
+    /// of them until the next launch.
     recoverable: Vec<SessionSummary>,
     recovering: bool,
     /// Markdown comes as one ZIP: remembered while the app runs.
@@ -303,9 +304,10 @@ pub fn update(app: &mut App, m: Msg) -> Task {
             }
         }
         Msg::RecoverLater => {
-            if !st.recovering && !st.recoverable.is_empty() {
-                st.recoverable.remove(0);
-            }
+            // All of them, not just the card on screen: the next one looks the same, so putting
+            // them off one by one read as a button that did nothing (#17). While one is being
+            // recovered it stays until that finishes.
+            st.recoverable.truncate(usize::from(st.recovering));
             Task::none()
         }
     }
@@ -537,9 +539,20 @@ fn recovery(app: &App) -> Option<El> {
         .rounded(px(R_PANEL))
         .child(line(s.title.clone(), tokens::LABEL, p().ink))
         .child(line(meta, tokens::SMALL, p().muted));
+    let more = st.recoverable.len() - 1;
+    let body = if more == 0 {
+        card.into_any_element()
+    } else {
+        col()
+            .w_full()
+            .gap(g(1.0))
+            .child(card)
+            .child(line(tf("recoverMore", &[("n", &more)]), tokens::SMALL, p().muted))
+            .into_any_element()
+    };
     Some(dialog(
         t("recoverTitle"),
-        Some(card.into_any_element()),
+        Some(body),
         vec![
             dialog_button(t("recover"), Variant::Primary, (!st.recovering).then(|| msg(Msg::Recover))),
             dialog_button(t("recoverLater"), Variant::Secondary, Some(msg(Msg::RecoverLater))),
@@ -624,6 +637,55 @@ mod tests {
         assert_eq!(fresh_color(&[p("a", "blue"), p("b", "teal")]), "green");
         let all: Vec<_> = PROJECT_COLORS.iter().filter(|c| **c != "slate").map(|c| p(c, c)).collect();
         assert_eq!(fresh_color(&all), "slate");
+    }
+
+    fn crashed(id: &str) -> SessionSummary {
+        SessionSummary {
+            id: id.into(),
+            title: "システム全体".into(),
+            started_at: "2026-11-10T09:00:00+09:00".into(),
+            duration_ms: 60_000,
+            folder: String::new(),
+            segments: 3,
+            screenshots: 0,
+            recoverable: true,
+            sources: vec![],
+            preview: String::new(),
+            activity: chidori_core::session::recovery::Activity { others: vec![], me: vec![], shots: vec![] },
+            project: None,
+        }
+    }
+
+    fn offered(app: &mut App, ids: &[&str]) {
+        let _ = update(app, Msg::Recoverable(ids.iter().map(|i| crashed(i)).collect()));
+    }
+
+    #[test]
+    fn later_puts_off_every_interrupted_session() {
+        let (mut app, _dir) = crate::preview::app();
+        offered(&mut app, &["a", "b", "c"]);
+        assert!(is_open(&app));
+        let _ = update(&mut app, Msg::RecoverLater);
+        assert!(!is_open(&app));
+    }
+
+    #[test]
+    fn later_during_a_recovery_keeps_the_one_being_recovered() {
+        let (mut app, _dir) = crate::preview::app();
+        offered(&mut app, &["a", "b", "c"]);
+        app.dialogs.recovering = true;
+        let _ = update(&mut app, Msg::RecoverLater);
+        assert_eq!(app.dialogs.recoverable.len(), 1);
+        assert_eq!(app.dialogs.recoverable[0].id, "a");
+    }
+
+    #[test]
+    fn recovering_one_offers_the_next() {
+        let (mut app, _dir) = crate::preview::app();
+        offered(&mut app, &["a", "b"]);
+        let _ = update(&mut app, Msg::Recovered(Ok(())));
+        assert_eq!(app.dialogs.recoverable.len(), 1);
+        assert!(is_open(&app));
     }
 
     #[test]

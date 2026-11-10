@@ -459,8 +459,18 @@ pub fn chip(label: impl Into<String>, dot: Option<Color>, chosen: bool, on: Opti
 /// A row of chips with the chosen one's white pill sliding between them (設定's sections, 履歴's
 /// projects).
 pub fn chips(key: &str, items: Vec<El>, chosen: Option<usize>) -> Div {
-    let look = Look { color: p().surface, side: p().side, radius: R_ROW };
-    motion::slide(format!("chips-{key}"), row().flex_none().h(g(5.0)), items, chosen, look)
+    motion::slide(format!("chips-{key}"), row().flex_none().h(g(5.0)), items, chosen, chip_look())
+}
+
+/// Chips that wrap onto further lines when they don't fit (設定's sections), keeping the 40 pitch
+/// of a single row; the chosen one's pill slides between lines too.
+pub fn chips_wrapped(key: &str, items: Vec<El>, chosen: Option<usize>) -> Div {
+    let container = div().flex().flex_wrap().items_center().w_full().gap_y(g(1.0)).py(px(4.0));
+    motion::slide(format!("chips-{key}"), container, items, chosen, chip_look())
+}
+
+fn chip_look() -> Look {
+    Look { color: p().surface, side: p().side, radius: R_ROW }
 }
 
 /// A quiet text button: muted, ink when pointed at.

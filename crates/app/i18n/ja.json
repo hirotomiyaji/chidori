@@ -99,6 +99,7 @@
   "quitAndSave": "保存して終了",
   "recoverTitle": "前回の記録が途中で終了しています。復元しますか？",
   "recoverLater": "後で",
+  "recoverMore": "ほかに {n} 件あります",
   "recovered": "復元しました",
   "micDenied": "マイクへのアクセスがオフです",
   "openSettings": "設定を開く",
