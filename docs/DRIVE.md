@@ -55,7 +55,7 @@ Positions are pixels of a screenshot, so what is seen in `shot.png` is where to 
 | Command | Keys | What it does |
 | --- | --- | --- |
 | `shot` | `file` (default `shot.png`) | Draws the window to a PNG in `target/drive`. Answers with its size and scale. |
-| `state` | | The view, the recording, the live transcript, banners, toasts, the open dialog, a waiting popup menu and the settings. |
+| `state` | | The view, the recording, the live transcript (with `live.scroll`: whether it follows the newest line, how far it is scrolled, how far it can scroll and whether its scrollbar is dragged), `scroll` (each scrolling page or dropdown on screen by its key, such as `settings-Transcription`, with its `top`, `max` and `dragging`), banners, toasts, the open dialog, a waiting popup menu and the settings. |
 | `click` | `x`, `y`, `button` (`left`, `right`, `middle`), `count` (2 = a double click) | Moves there, presses and releases. |
 | `move` | `x`, `y` | Moves the pointer there (hover, tooltips). |
 | `drag` | `x`, `y`, `to_x`, `to_y`, `button` | Presses, moves in steps, releases. |

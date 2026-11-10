@@ -329,7 +329,7 @@ pub fn view(app: &App, ui: &mut Ui) -> El {
                 let rows = items.iter().map(|e| row_view(app, e, page.is_some())).collect();
                 sections = sections.child(day_header(day, today)).child(panel(rows));
             }
-            form::scroll(sections)
+            form::scroll("history", sections)
         }
     };
 

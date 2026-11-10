@@ -32,6 +32,7 @@ use crate::model::format::{day_of, day_text};
 use crate::model::transcript::Transcript;
 use crate::motion::{self, Look};
 use crate::screens::popup::Menu;
+use crate::scrollbar::{self, Bar};
 use crate::task::{self, Task};
 use crate::theme::{self, Color, GRID, Ink, R_NOTCH, R_ROW, g, line, mix, p, plain, tokens};
 use crate::ui::{self, El, Field, Ui, clickable};
@@ -50,6 +51,9 @@ const OVERSCAN: f32 = 360.0;
 const PAD_X: f32 = 2.0 * GRID;
 /// The widest a bubble gets in the 420 px window; wider windows give it a like share.
 const BUBBLE_W: f32 = 37.0 * GRID;
+/// A guess at a row's height before it is laid out, so a finished session's scrollbar is about the
+/// right length from its first frame.
+const ROW_EST: f32 = 7.0 * GRID;
 
 pub type Wrap = fn(ListMsg) -> Message;
 
@@ -72,6 +76,9 @@ pub struct ListState {
     /// The list's width as of the last layout, read before the rows are built (see `measure`).
     width: Cell<f32>,
     cache: RefCell<Option<(u64, Rc<Rows>)>>,
+    /// The room over the first row for the floating card, as of the last layout.
+    top: Cell<f32>,
+    pub bar: Rc<Bar>,
     pub editing: Option<Edit>,
     /// A screenshot's caption being written: its ID and the draft.
     pub caption: Option<(String, String)>,
@@ -102,6 +109,8 @@ impl ListState {
             look: Cell::new(0),
             width: Cell::new(0.0),
             cache: RefCell::new(None),
+            top: Cell::new(0.0),
+            bar: Rc::new(Bar::new(name)),
             editing: None,
             caption: None,
             marked: None,
@@ -118,6 +127,10 @@ impl ListState {
         self.playing = None;
         self.title = None;
         self.keys.borrow_mut().clear();
+        if self.bar.dragging() {
+            self.items.scrollbar_drag_ended();
+        }
+        self.bar.reset();
         self.items.reset(0);
         self.forget();
     }
@@ -143,7 +156,7 @@ impl ListState {
         if *old != keys {
             let same = old.iter().zip(&keys).take_while(|(a, b)| a == b).count();
             if old.is_empty() {
-                self.items.reset(keys.len());
+                self.items.reset_with_uniform_height(keys.len(), px(ROW_EST));
             } else {
                 self.items.splice(same..old.len(), keys.len() - same);
                 // The row before the change may have ended a turn or a partial.
@@ -533,13 +546,17 @@ pub fn view(app: &App, c: Ctx, ui: &mut Ui) -> El {
     keys.push(footer_key(note));
     list.measure();
     list.sync(keys, look_key(app, tr, list, c));
+    // The card's room is the first row's, not the list's padding, so GPUI's scroll range (which
+    // the scrollbar reads) is the whole of it.
+    if (list.top.replace(c.top) - c.top).abs() > 0.5 {
+        list.items.remeasure_items(0..1);
+    }
 
     let items = gpui_list(list.items.clone(), move |ix, _window, cx| {
         ui::read_app(cx, |app| build_row(app, c, ix, note)).unwrap_or_else(nothing)
     })
-    .size_full()
-    .pt(px(c.top));
-    let mut area = div().relative().size_full().child(items);
+    .size_full();
+    let mut area = div().relative().size_full().child(items).child(scrollbar::bar(&list.items, &list.bar, c.top));
     if c.live && !list.following() {
         // The hover sits on the sheet itself: a wrapper's would be hidden under it.
         let hover = theme::hover_of(p().surface);
@@ -597,7 +614,8 @@ fn build_row(app: &App, c: Ctx, ix: usize, note: bool) -> El {
         }
     };
     let inner = div().w_full().max_w(px(MAX_W)).child(body);
-    div().w_full().flex().justify_center().child(inner).into_any_element()
+    let outer = div().w_full().flex().justify_center().child(inner);
+    if ix == 0 { outer.pt(px(c.top)) } else { outer }.into_any_element()
 }
 
 /// A speaker's name in their colour: 相手 coral, 自分 teal.

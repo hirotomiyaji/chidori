@@ -159,6 +159,7 @@ pub fn begin_frame() {
     INPUTS.with(|i| i.borrow_mut().retain(|k, _| seen.contains(k)));
     RENDERED.with(|r| r.set(r.get() + 1));
     crate::motion::begin_frame();
+    crate::scrollbar::begin_frame();
 }
 
 /// An element ID from something that names it (its message, its label), stable from frame to

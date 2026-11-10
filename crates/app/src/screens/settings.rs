@@ -332,7 +332,7 @@ pub fn view(app: &App, ui: &mut Ui) -> El {
             col().w_full().gap(g(2.0)).px(g(2.0)).pt(g(1.0)).pb(g(2.0)).children(groups).into_any_element()
         }
     };
-    let page = col().size_full().child(section_chips(app)).child(form::scroll(body));
+    let page = col().size_full().child(section_chips(app)).child(form::scroll(&format!("settings-{tab:?}"), body));
     let mut root = div().id("settings").size_full().flex().flex_col().child(page);
     if leaving(app) {
         // Comes before the release that presses a button, so recording another shortcut still works.

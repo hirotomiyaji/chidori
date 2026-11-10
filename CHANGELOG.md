@@ -4,8 +4,19 @@ All notable changes are listed here. Versions follow [SemVer](https://semver.org
 
 ## [Unreleased]
 
+## [0.8.3] - 2026-11-11
+
+### Added
+
+- A scrollbar on the transcript, and the same one on 設定, 履歴, the setup wizard, the start screen and dropdowns. It is thin until the pointer comes near, then grows thicker; drag it, or click its track to jump there. Dragging the transcript's away from the newest line pauses following, and dragging it to the end follows again.
+
+### Changed
+
+- Each 設定 section and setup step opens at its top instead of where the last one was scrolled to.
+
 ### Fixed
 
+- The Mac version no longer crashes as it quits.
 - 設定's sections all show: in a narrow window the chips wrap onto a second line instead of running off its edge, which hid 出力.
 - 後で on the recovery dialog puts off every interrupted recording at once instead of one per press, and the dialog says how many more are waiting.
 - The window buttons stay inside a narrow window, and inside the default one in English: 「Chidori」 makes way first, then the tabs move closer together.

@@ -1133,7 +1133,7 @@ dependencies = [
 
 [[package]]
 name = "chidori"
-version = "0.8.2"
+version = "0.8.3"
 dependencies = [
  "anyhow",
  "arboard",
@@ -1169,7 +1169,7 @@ dependencies = [
 
 [[package]]
 name = "chidori-core"
-version = "0.8.2"
+version = "0.8.3"
 dependencies = [
  "anyhow",
  "audioadapter-buffers",
