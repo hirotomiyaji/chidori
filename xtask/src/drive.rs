@@ -54,8 +54,9 @@ fn start(flags: &[String]) -> Result<()> {
     for file in [IN, OUT] {
         let _ = std::fs::remove_file(dir.join(file));
     }
-    // Partial (grey) text only runs on the GPU.
-    let features = if flag("--gpu") { "drive,gpu-vulkan" } else { "drive" };
+    // Partial (grey) text only runs on the GPU, which is Metal on a Mac.
+    let gpu = if cfg!(target_os = "macos") { "drive,gpu-metal" } else { "drive,gpu-vulkan" };
+    let features = if flag("--gpu") { gpu } else { "drive" };
     run(Command::new(env!("CARGO")).args(["build", "-p", "chidori", "--features", features]).current_dir(root()))?;
     let exe = target_dir().join("debug").join(if cfg!(windows) { "chidori.exe" } else { "chidori" });
     let log = std::fs::File::create(dir.join("app.log")).map_err(|e| format!("app.log: {e}"))?;

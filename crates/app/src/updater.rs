@@ -78,5 +78,7 @@ pub fn install(app: &AppHandle) -> AppResult<()> {
         .spawn()
         .map_err(|e| AppError::internal(format!("starting the installer: {e}")))?;
     drop(recorder);
+    // `exit` skips `main`'s `StopWorker`: free the model first, as every other way out does.
+    app.state().worker.shutdown();
     std::process::exit(0);
 }

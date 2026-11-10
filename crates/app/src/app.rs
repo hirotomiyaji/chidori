@@ -242,6 +242,16 @@ pub fn run(on_start: impl FnOnce() + 'static) {
     app.run(move |cx| {
         on_start();
         gpui_kit::init(cx);
+        // macOS never returns from `app.run` (`terminate:` calls `exit`), so `main`'s `StopWorker`
+        // doesn't run there: free the Whisper model here, or ggml's Metal device aborts at exit.
+        // Stopped now rather than in the future, which GPUI gives only `SHUTDOWN_TIMEOUT`.
+        cx.on_app_quit(|_| {
+            if let Some(core) = bridge::core() {
+                core.state().worker.shutdown();
+            }
+            async {}
+        })
+        .detach();
         let fonts = theme::FONTS.iter().map(|f| std::borrow::Cow::Borrowed(*f)).collect();
         if let Err(e) = cx.text_system().add_fonts(fonts) {
             tracing::warn!("loading the brand fonts: {e}");

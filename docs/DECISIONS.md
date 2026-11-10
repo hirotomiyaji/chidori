@@ -647,6 +647,9 @@ found a reason to deviate.
   through a Unix socket in the user's temp folder, as a named mutex and event do on Windows; Launch
   Services already keeps a `.app` to one copy, but a binary started from a terminal is not.
 - **Display language** is the first of `defaults read -g AppleLanguages`.
+- **Quitting frees the model in GPUI's quit hook** (`on_app_quit` in `app::run`): `terminate:`
+  calls `exit` without returning to `main`, so `main`'s `StopWorker` never runs, and ggml's Metal
+  device aborts at exit while a Whisper model is still loaded (issue 16).
 - **Kikitori migration** is Windows-only: Kikitori never shipped for macOS.
 - **Packaging (step 4).** `cargo xtask dist` on a Mac builds the Metal app, has cargo-packager
   make `Chidori.app` (Info.plist keys from `crates/app/macos/Info.plist`), signs it ad hoc and
