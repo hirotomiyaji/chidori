@@ -134,6 +134,13 @@ pub fn btn_with(content: impl IntoElement, variant: Variant, size: Size, on: Opt
     button_box(content, variant, size.height(), size.pad_x(), on)
 }
 
+/// A round button holding only an icon (the card's ▶): as wide as it is high, with no side
+/// padding, which would push the icon off centre.
+pub fn round_button(content: impl IntoElement, variant: Variant, size: Size, on: Option<Message>) -> Stateful<Div> {
+    let side = size.height();
+    button_box(content, variant, side, 0.0, on).w(px(side))
+}
+
 /// An icon-only button: a muted icon with no ground of its own, its name as a tooltip. `Md` is
 /// 40 × 40 (the title bar's), `Lg` 48 (the bottom bar's), `Sm` 32.
 pub fn icon_button(which: Icon, label: impl Into<String>, size: Size, on: Option<Message>) -> El {

@@ -441,8 +441,8 @@ pub fn writing_note(now: Instant) -> El {
         .into_any_element()
 }
 
-fn centered_note(content: El) -> gpui_kit::Div {
-    div().size_full().flex().items_center().justify_center().px(g(3.0)).child(content)
+fn centered_note(content: El, top: f32) -> gpui_kit::Div {
+    div().size_full().flex().items_center().justify_center().px(g(3.0)).pt(px(top)).child(content)
 }
 
 /// Which list a view shows: the screen's transcript and list state, found again from the app when
@@ -458,6 +458,39 @@ pub struct Ctx {
     /// Lines can be played from.
     pub playable: bool,
     pub wrap: Wrap,
+    /// The height of the card floating over the list's top (`under_card`): the lines start below
+    /// it and scroll up behind it.
+    pub top: f32,
+}
+
+thread_local! {
+    /// Each screen's card height as last laid out, keyed by screen.
+    static CARD_HEIGHTS: std::cell::RefCell<std::collections::HashMap<&'static str, f32>> = Default::default();
+}
+
+/// The height of `key`'s floating card as last laid out (0 before its first frame).
+pub fn card_height(key: &'static str) -> f32 {
+    CARD_HEIGHTS.with(|h| h.borrow().get(key).copied().unwrap_or(0.0))
+}
+
+/// The list with the session's card floating over its top, so lines scroll up behind the card and
+/// only the card's own ground hides them. A card in a strip of its own above the list cut the lines
+/// along a straight edge, under its rounded corners too.
+pub fn under_card(key: &'static str, card: El, list: El) -> El {
+    let float = div().absolute().top_0().left_0().right_0().px(g(2.0)).child(card).on_children_prepainted(
+        move |bounds, window, _| {
+            let Some(b) = bounds.first() else { return };
+            let h = f32::from(b.size.height);
+            let changed = CARD_HEIGHTS.with(|m| {
+                let old = m.borrow_mut().insert(key, h);
+                old.is_none_or(|o| (o - h).abs() > 0.5)
+            });
+            if changed {
+                window.refresh();
+            }
+        },
+    );
+    div().relative().flex_1().min_h_0().w_full().child(list).child(float).into_any_element()
 }
 
 /// The transcript as a list of the rows in view.
@@ -488,10 +521,10 @@ pub fn view(app: &App, c: Ctx, ui: &mut Ui) -> El {
         } else {
             line(t("waitingForSpeech"), tokens::SMALL, p().muted).into_any_element()
         };
-        return centered_note(body).into_any_element();
+        return centered_note(body, c.top).into_any_element();
     }
     if !has_lines {
-        return centered_note(line(t("emptyTranscript"), tokens::SMALL, p().muted).into_any_element())
+        return centered_note(line(t("emptyTranscript"), tokens::SMALL, p().muted).into_any_element(), c.top)
             .into_any_element();
     }
     let mut keys: Vec<String> = rows.rows.iter().map(|r| r.key.clone()).collect();
@@ -502,7 +535,8 @@ pub fn view(app: &App, c: Ctx, ui: &mut Ui) -> El {
     let items = gpui_list(list.items.clone(), move |ix, _window, cx| {
         ui::read_app(cx, |app| build_row(app, c, ix, note)).unwrap_or_else(nothing)
     })
-    .size_full();
+    .size_full()
+    .pt(px(c.top));
     let mut area = div().relative().size_full().child(items);
     if c.live && !list.following() {
         let hover = p().hover_panel;

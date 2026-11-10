@@ -414,6 +414,9 @@ found a reason to deviate.
   and could not show a silent mic. The bar under the transcript (80 high) holds the camera and
   its menu, the star, the cut, then pause and the ink 停止 pill with its red square; while
   finishing, 仕上げ中 with a spinner.
+- **The card floats over the transcript** (recording, a finished session, one opened from 履歴):
+  the lines start below it and scroll up behind it, so only the card's own ground hides them. In
+  a strip of its own the card cut them along a straight edge, under its rounded corners too.
 - **Switching the source while recording is a native menu** (the same as the compact window's):
   the source choices and 「会話として録音」, each switching at once with a toast. A drawn
   dropdown would cover the transcript and could not fit the compact window; a native menu can

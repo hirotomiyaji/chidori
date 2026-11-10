@@ -29,8 +29,8 @@ use crate::screens::session_menu::{self, SessionRef};
 use crate::theme::{self, Color, GRID, Ink, R_PANEL, R_TAG, alpha, g, line, p, plain, project_color, tokens};
 use crate::ui::{self, El, Field, Ui, clickable, uid};
 use crate::widgets::{
-    Size, Variant, btn, btn_with, col, fill, icon_button, icon_button_sized, nothing, progress, row, spinner, swatch,
-    with_tip,
+    Size, Variant, btn, btn_with, col, fill, icon_button, icon_button_sized, nothing, progress, round_button, row,
+    spinner, swatch, with_tip,
 };
 
 #[derive(Debug, Clone)]
@@ -462,8 +462,7 @@ pub fn session_card(c: SessionCtx<'_>, title_input: Option<El>, rename: Message)
         if c.player {
             let (glyph, tip) = if c.playing { (Icon::Pause, t("pausePlayback")) } else { (Icon::Play, t("play")) };
             let play =
-                btn_with(icon(glyph, 16.0, p_.on_ink), Variant::Primary, Size::Md, Some((c.wrap)(CardMsg::Play)))
-                    .w(g(5.0));
+                round_button(icon(glyph, 16.0, p_.on_ink), Variant::Primary, Size::Md, Some((c.wrap)(CardMsg::Play)));
             r = r.child(with_tip(play, tip));
         }
         card = card.child(r.child(session_wave(c)));
@@ -768,8 +767,8 @@ pub fn compact_review(c: SessionCtx<'_>) -> El {
     let mut r = row().w_full().gap(g(1.0));
     if c.player {
         let (glyph, tip) = if c.playing { (Icon::Pause, t("pausePlayback")) } else { (Icon::Play, t("play")) };
-        let play = btn_with(icon(glyph, 16.0, p().on_ink), Variant::Primary, Size::Md, Some((c.wrap)(CardMsg::Play)))
-            .w(g(5.0));
+        let play =
+            round_button(icon(glyph, 16.0, p().on_ink), Variant::Primary, Size::Md, Some((c.wrap)(CardMsg::Play)));
         r = r.child(with_tip(play, tip));
     }
     // 書き出し picks a format in a dialog; the compact window is too small for one.

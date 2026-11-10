@@ -16,7 +16,7 @@ use crate::app::{App, Level, Message, View, call};
 use crate::i18n::t;
 use crate::model::transcript::Transcript;
 use crate::task::Task;
-use crate::theme::{g, line, p, tokens};
+use crate::theme::{line, p, tokens};
 use crate::ui::{El, KeyPress, Ui};
 use crate::widgets::{col, spinner};
 
@@ -235,12 +235,9 @@ pub fn view(app: &App, ui: &mut Ui) -> El {
             wrap_list(ListMsg::TitleSave),
         )
     });
+    let top = transcript::card_height("viewer");
     let list =
-        transcript::view(app, Ctx { select, live: false, editable: true, playable: player, wrap: wrap_list }, ui);
-    col()
-        .size_full()
-        .child(div().flex_none().px(g(2.0)).child(card::session_card(c, input, wrap_list(ListMsg::RenameStart))))
-        .child(div().flex_1().min_h_0().w_full().child(list))
-        .child(card::review_bar(c))
-        .into_any_element()
+        transcript::view(app, Ctx { select, live: false, editable: true, playable: player, wrap: wrap_list, top }, ui);
+    let card = card::session_card(c, input, wrap_list(ListMsg::RenameStart));
+    col().size_full().child(transcript::under_card("viewer", card, list)).child(card::review_bar(c)).into_any_element()
 }
