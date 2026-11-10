@@ -29,8 +29,8 @@ cargo xtask drive stop
 - **Its own folders.** Settings, sessions, logs and the window's place are under
   `target/drive/profile`, never the user's. A new profile links to the models already on the PC,
   is past the setup wizard, and uses the smallest model there. `start --fresh` starts a new one.
-  `start --gpu` builds with Vulkan (set `CARGO_TARGET_DIR` as for any Vulkan build), which
-  partial (grey) text needs.
+  `start --gpu` builds with Vulkan (set `CARGO_TARGET_DIR` as for any Vulkan build), or Metal on
+  a Mac, which partial (grey) text needs.
 - **Beside the app itself.** No single-instance rule, no tray icon, no global hotkeys, no update
   check, no system notifications. Their effects have commands of their own (`hotkey`, `tray`,
   `menu`).

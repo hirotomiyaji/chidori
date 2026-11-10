@@ -135,6 +135,8 @@ fn main() {
 
 /// Stops the transcription worker when `main` ends, a panic included, so the Whisper model is
 /// freed before the process exits. On Metal, ggml aborts at exit if a model is still loaded.
+/// macOS exits without returning from `app::run`, so there the quit hook in `app::run` stops it
+/// first; stopping twice is harmless.
 struct StopWorker(Arc<AsrWorker>);
 
 impl Drop for StopWorker {
