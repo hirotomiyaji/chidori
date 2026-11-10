@@ -4,6 +4,23 @@ All notable changes are listed here. Versions follow [SemVer](https://semver.org
 
 ## [Unreleased]
 
+## [0.8.2] - 2026-11-10
+
+### Changed
+
+- Menus are drawn in Chidori's own look instead of Windows': the ⋯ menus, コピー ▾, the camera's and the source's open at the pointer, with arrow keys, Enter and Esc. One too tall for the compact window still opens as Windows' menu.
+- A right click opens the menu of what is under it: a session in 履歴, the session card, a line (with 「この行をコピー」), a screenshot, the title bar (常に手前に表示, 縮小, 最小化, 閉じる, in place of Windows' menu) and text boxes (切り取り, コピー, 貼り付け, すべて選択, in Japanese).
+
+### Fixed
+
+- Buttons look right under the pointer: コピー and 開始 no longer turn grey with their words fading, white buttons no longer vanish into the background, and the title bar's tabs, 設定's sections, the source choices and other buttons that showed nothing now light up.
+- A double click or a second hotkey press on 開始 no longer starts a second session, and a second press on 停止 does nothing.
+- A session left by a crash stays recoverable in 履歴, even after a continued recording or a rename.
+- A past session's sound stops when you leave it or a recording starts.
+- Finishing no longer waits forever after a model failed to load; it saves what it has.
+- A ★ on speech too short to make a line lands on the line said then.
+- Smaller fixes: clock times when continuing a file's session, continuing after a crash mid-write, settings changes overwriting a recording's source, and importing a model during its download.
+
 ## [0.8.1] - 2026-11-08
 
 ### Added
