@@ -6,7 +6,7 @@
 
 use chidori_core::audio::source::AudioApp;
 use chidori_core::settings::SourceMode;
-use gpui_kit::{IntoElement, ParentElement, Styled, div, px};
+use gpui_kit::{InteractiveElement, IntoElement, ParentElement, Styled, div, px};
 
 use super::Msg;
 use crate::app::{App, Message, call};
@@ -14,7 +14,7 @@ use crate::i18n::t;
 use crate::icons::{Icon, icon};
 use crate::motion::{self, Look};
 use crate::task::Task;
-use crate::theme::{GRID, Ink, R_PANEL, R_ROW, alpha, g, line, p, tokens};
+use crate::theme::{self, GRID, Ink, R_PANEL, R_ROW, alpha, g, line, p, tokens};
 use crate::ui::{El, clickable};
 use crate::widgets::{col, icon_button_sized, row, select, setting_row, spinner, text_button, toggle_row, with_tip};
 
@@ -103,7 +103,7 @@ fn option(chosen: bool, enabled: bool, name: String, status: Option<String>, on:
     } else {
         div().flex_none().size(g(3.0)).into_any_element()
     };
-    clickable(enabled.then_some(on), "source-option")
+    let mut b = clickable(enabled.then_some(on), "source-option")
         .flex()
         .items_center()
         .gap(g(2.0))
@@ -112,8 +112,13 @@ fn option(chosen: bool, enabled: bool, name: String, status: Option<String>, on:
         .px(g(2.0))
         .rounded(px(R_ROW))
         .child(words)
-        .child(check)
-        .into_any_element()
+        .child(check);
+    // The chosen row has the sliding pill under it already.
+    if enabled && !chosen {
+        let hover = theme::wash();
+        b = b.hover(move |s| s.bg(hover));
+    }
+    b.into_any_element()
 }
 
 /// 音が出ています while the app plays, 無音 when it has a session but is quiet now.

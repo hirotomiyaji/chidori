@@ -62,7 +62,7 @@ Positions are pixels of a screenshot, so what is seen in `shot.png` is where to 
 | `scroll` | `x`, `y`, `dy`, `dx` | Scrolls by that many pixels at the point. |
 | `key` | `keys` | Keystrokes as GPUI names them, separated by spaces: `enter`, `escape`, `ctrl-f`. |
 | `type` | `text` | Types the text into whatever has the focus. |
-| `menu` | `id` | Picks an item of a popup or tray menu. A driven run shows no native menu: `state` lists the one the app last opened under `popup`. |
+| `menu` | `id` | Picks an item of a popup or tray menu. `state` lists the menu the app last opened under `popup`; a drawn one also shows in `shot`, and a driven run never opens a native one. |
 | `tray` | | A click on the tray icon. |
 | `hotkey` | `name` (`toggle`, `screenshot`, `mark`, `cut`), `times` | What a press of that global hotkey does. |
 | `window` | `event` (`hidden`, `shown`, `close`, `focused`, `drop` with `path`) | Tells the app its window was minimized, closed, focused, or had a file dropped on it. |

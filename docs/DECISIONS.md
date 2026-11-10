@@ -408,10 +408,9 @@ found a reason to deviate.
   and could not show a silent mic. The bar under the transcript (80 high) holds the camera and
   its menu, the star, the cut, then pause and the ink 停止 pill with its red square; while
   finishing, 仕上げ中 with a spinner.
-- **Switching the source while recording is a native menu** (the same as the compact window's):
-  the source choices and 「会話として録音」, each switching at once with a toast. A drawn
-  dropdown would cover the transcript and could not fit the compact window; a native menu can
-  reach past the window.
+- **Switching the source while recording is a menu** (the same as the compact window's): the
+  source choices and 「会話として録音」, each switching at once with a toast. It is drawn where
+  it fits and native where it doesn't (see "Menus are drawn by the app").
 - **A finished session** keeps the card, now white: the title (click to rename), 「11月8日 22:00 ·
   41分 · Zoom ＋ マイク」 (the model in its tooltip), the project chip, and a 40 px round play
   button beside the session's wave, which a click seeks (and plays from, once playing). A past
@@ -450,7 +449,7 @@ found a reason to deviate.
 - **Projects are coloured dots** (FR-64), the one place colours beyond the speakers and the record
   dot appear, so they stay small: a round dot before a title or on a chip, never a fill. A new
   project gets a colour no other project uses. A session joins a project from the chip on its
-  card, History's row menu or 選択, each a native menu ending in 「新しいプロジェクト…」. A new
+  card, History's row menu or 選択, each a menu ending in 「新しいプロジェクト…」. A new
   recording starts in no project.
 - **設定 is chips**: 一般 · 音声 · 文字起こし · スクショ · ショートカット · 出力 in a scrolling row,
   the chosen one on a sliding white pill, each chip's current setting in its tooltip (and 「!」 on
@@ -510,8 +509,8 @@ found a reason to deviate.
 - **Always on top is off by default**, toggled by a pin in the title bar on every page.
 - **Screenshots take the recorded app by default**: its window while recording an app, the
   cursor's screen while recording system audio or the mic alone (`appWindow`).
-- **The camera has a menu** (a chevron joined to it, FR-34), a native popup like ⋯ so it fits
-  the compact window. The three targets are the setting itself, so a choice there is
+- **The camera has a menu** (a chevron joined to it, FR-34), a popup like ⋯ (native where the
+  window is too small). The three targets are the setting itself, so a choice there is
   remembered, as in 設定 › スクショ; a window from its list (up to 20, front first, Chidori's own
   left out, from the same `xcap` listing) holds for the rest of the recording only, since a
   window seldom outlives one. A picked window that has closed or been minimized falls back to the
@@ -538,9 +537,23 @@ found a reason to deviate.
   it, so the clock times in the transcript stay true.
 - **The session viewer has its own transcript** (`screens/viewer.rs`), so a
   recording that runs while a past session is open keeps receiving its lines.
-- **The … menu is a native popup menu** (`native/menu.rs`, through `muda`), because the compact
-  window (380×170) is too small to hold a dropdown and a menu drawn by the app cannot reach past
-  its window. A pick comes back as an id, routed by its prefix to the screen that opened it.
+- **Menus are drawn by the app** (`screens/popup.rs`): the ⋯ menus, コピー ▾, the camera's, the
+  source menu and every right click open a white sheet with the `line` ring at the pointer, rows
+  that wash under it, a submenu beside its row, ↑ ↓ → ← Enter and Esc. A menu taller than the
+  window (the compact window, 380×170, with a long app list) falls back to the native one
+  (`native/menu.rs`, through `muda`), which can reach past the window; the tray's menu stays
+  native. A pick comes back as an id, routed by its prefix to the screen that opened it, or as
+  `msg:<n>` for a menu built from the app's own messages (`popup::Menu`).
+- **A right click opens the menu of what is under it**: a history row its ⋯ menu, the session
+  card 名前を変更 and its ⋯ items, a line この行をコピー and its hover actions, a screenshot its
+  image, caption and delete. The title bar and the compact header open the window's menu
+  (常に手前に表示, 縮小/拡大, 最小化, 閉じる) in place of Windows' system menu, and a text box
+  切り取り, コピー, 貼り付け, すべて選択 in place of the kit's English one.
+- **Hover is one rule** (`theme::hover_of`, `theme::wash`): an ink pill goes a step toward its
+  text, a white pill a step toward ink, and a button with no ground of its own (an icon, a
+  ghost, a row of a menu) lays a thin wash of ink over whatever it sits on, so it shows on the
+  ground, a panel, a dialog or a hovered row alike. A label whose button changes colour on hover
+  takes that colour from the button rather than its own.
 - **No screen reader or keyboard navigation yet.** The app gives GPUI no accessibility labels or
   tab order yet, so the web UI's `aria-label`s and tab order have no counterpart. Icon buttons
   keep their names as tooltips; Escape, Enter and the hotkeys work. Revisit in the redesign.

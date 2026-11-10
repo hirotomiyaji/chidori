@@ -24,14 +24,16 @@ use gpui_kit::{
 };
 
 use super::rows::{self, Row, RowKind, Rows};
+use crate::actions::Action;
 use crate::app::{App, Message};
 use crate::i18n::{t, tf};
 use crate::icons::{Icon, icon};
 use crate::model::format::{day_of, day_text};
 use crate::model::transcript::Transcript;
 use crate::motion::{self, Look};
+use crate::screens::popup::Menu;
 use crate::task::{self, Task};
-use crate::theme::{self, Color, GRID, Ink, R_NOTCH, R_ROW, g, line, mix, p, tokens};
+use crate::theme::{self, Color, GRID, Ink, R_NOTCH, R_ROW, g, line, mix, p, plain, tokens};
 use crate::ui::{self, El, Field, Ui, clickable};
 use crate::widgets::{Size, Variant, btn, col, fill, floating, nothing, row, spinner, with_tip};
 
@@ -505,16 +507,16 @@ pub fn view(app: &App, c: Ctx, ui: &mut Ui) -> El {
     .size_full();
     let mut area = div().relative().size_full().child(items);
     if c.live && !list.following() {
-        let hover = p().hover_panel;
-        let jump = floating(row())
+        // The hover sits on the sheet itself: a wrapper's would be hidden under it.
+        let hover = theme::hover_of(p().surface);
+        let jump = floating(clickable(Some(wrap(ListMsg::JumpLatest)), "jump").flex().flex_row().items_center())
             .gap(g(1.0))
             .h(g(5.0))
             .px(g(2.0))
             .rounded(g(2.5))
+            .hover(move |s| s.bg(hover))
             .child(icon(Icon::ArrowDown, 16.0, p().ink))
             .child(line(t("jumpLatest"), tokens::LABEL, p().ink).bold());
-        let jump =
-            clickable(Some(wrap(ListMsg::JumpLatest)), "jump").rounded(g(2.5)).hover(move |s| s.bg(hover)).child(jump);
         area = area.child(div().absolute().left_0().right_0().bottom(g(2.0)).flex().justify_center().child(jump));
     }
     area.into_any_element()
@@ -609,7 +611,7 @@ fn meta(source: SourceId, time: String, two: bool, name: bool, star: bool) -> El
 fn act(which: Icon, label: String, msg: Message, pressed: bool) -> El {
     let group = format!("act-{which:?}");
     let ink = p().ink;
-    let hover = p().hover_panel;
+    let hover = theme::wash();
     let mut glyph = icon(which, 16.0, if pressed { ink } else { p().muted });
     if !pressed {
         glyph = glyph.group_hover(group.clone(), move |s| s.text_color(ink));
@@ -627,12 +629,14 @@ fn act(which: Icon, label: String, msg: Message, pressed: bool) -> El {
 }
 
 /// A row with actions shown at its top, on the side away from its bubble, while the pointer is on it.
-fn with_actions(body: El, items: Vec<El>, key: &str, right: bool) -> El {
+/// `menu` is what a right click on the row opens: the same actions, as a menu.
+fn with_actions(body: El, items: Vec<El>, key: &str, right: bool, menu: Message) -> El {
     let group: SharedString = format!("row-{key}").into();
     let bar = floating(row()).p(px(2.0)).children(items);
     let overlay = div().absolute().top_0().invisible().group_hover(group.clone(), |s| s.visible()).child(bar);
     let overlay = if right { overlay.left(px(PAD_X)) } else { overlay.right(px(PAD_X)) };
-    div().id(ui::uid(("row", key))).group(group).relative().w_full().child(body).child(overlay).into_any_element()
+    let row = div().id(ui::uid(("row", key))).group(group).relative().w_full().child(body).child(overlay);
+    ui::on_right(row, menu).into_any_element()
 }
 
 fn row_view(app: &App, tr: &Transcript, list: &ListState, r: &Row, two: bool, ringed: bool, c: Ctx) -> El {
@@ -739,16 +743,23 @@ fn segment_row(
     }
     let wrap = c.wrap;
     let mut items = Vec::new();
+    let mut menu = Menu::new().act(t("copyLine"), Some(Message::Action(Action::CopyText(s.text.clone()))));
     if c.playable {
-        items.push(act(Icon::Play, t("playFromHere"), wrap(ListMsg::PlayFrom(s.t_start_ms)), false));
+        let play = wrap(ListMsg::PlayFrom(s.t_start_ms));
+        items.push(act(Icon::Play, t("playFromHere"), play.clone(), false));
+        menu = menu.act(t("playFromHere"), Some(play));
     }
     let mark = if s.important { t("unmarkImportant") } else { t("markImportant") };
-    items.push(act(Icon::Star, mark, wrap(ListMsg::Star(s.id.clone(), !s.important)), s.important));
+    let star = wrap(ListMsg::Star(s.id.clone(), !s.important));
+    items.push(act(Icon::Star, mark.clone(), star.clone(), s.important));
+    menu = menu.act(mark, Some(star));
     if c.editable && !c.live {
-        items.push(act(Icon::Pencil, t("editLine"), wrap(ListMsg::Edit(s.id.clone())), false));
-        items.push(act(Icon::Trash, t("deleteLine"), wrap(ListMsg::DeleteLine(s.id.clone())), false));
+        let (edit, delete) = (wrap(ListMsg::Edit(s.id.clone())), wrap(ListMsg::DeleteLine(s.id.clone())));
+        items.push(act(Icon::Pencil, t("editLine"), edit.clone(), false));
+        items.push(act(Icon::Trash, t("deleteLine"), delete.clone(), false));
+        menu = menu.separator().act(t("editLine"), Some(edit)).act(t("deleteLine"), Some(delete));
     }
-    with_actions(body, items, &s.id, on_right(s.source, two))
+    with_actions(body, items, &s.id, on_right(s.source, two), menu.open())
 }
 
 /// A line being edited: a white panel with its words in a box, and 取消 and 保存 under it.
@@ -782,8 +793,17 @@ fn screenshot_row(tr: &Transcript, list: &ListState, s: &Screenshot, editable: b
         .h(g(3.0))
         .min_w_0()
         .child(icon(Icon::Camera, 16.0, p().muted).group_hover("shot", move |st| st.text_color(ink)))
-        .child(div().min_w_0().overflow_hidden().child(line(words, tokens::SMALL, p().muted)));
-    let marker = clickable(path.map(|p| wrap(ListMsg::OpenImage(p))), ("shot", &s.id))
+        .child(div().min_w_0().overflow_hidden().child(plain(words, tokens::SMALL).text_ellipsis()));
+    let open_image = path.map(|p| wrap(ListMsg::OpenImage(p)));
+    let mut menu = Menu::new().act(t("openImage"), open_image.clone());
+    if editable {
+        menu = menu
+            .separator()
+            .act(t("addCaption"), Some(wrap(ListMsg::Caption(s.id.clone()))))
+            .act(t("deleteScreenshot"), Some(wrap(ListMsg::DeleteShot(s.id.clone()))));
+    }
+    let menu = menu.open();
+    let marker = clickable(open_image, ("shot", &s.id))
         .group("shot")
         .flex()
         .min_w_0()
@@ -797,18 +817,19 @@ fn screenshot_row(tr: &Transcript, list: &ListState, s: &Screenshot, editable: b
         let save = btn(t("save"), Variant::Primary, Size::Sm, Some(wrap(ListMsg::SaveCaption)));
         c = c.child(row().w_full().gap(g(1.0)).pt(g(1.0)).child(div().flex_1().child(input)).child(save));
     }
-    let body = c.into_any_element();
     if !editable {
-        return body;
+        let row = div().id(ui::uid(("shot-row", &s.id))).w_full().child(c);
+        return ui::on_right(row, menu).into_any_element();
     }
     with_actions(
-        body,
+        c.into_any_element(),
         vec![
             act(Icon::ImagePlus, t("addCaption"), wrap(ListMsg::Caption(s.id.clone())), false),
             act(Icon::Trash, t("deleteScreenshot"), wrap(ListMsg::DeleteShot(s.id.clone())), false),
         ],
         &s.id,
         false,
+        menu,
     )
 }
 

@@ -286,6 +286,11 @@ pub enum CopyFormat {
     Markdown,
 }
 
+/// Copies some text (one line of a transcript) to the clipboard.
+pub fn copy_text(app: &AppHandle, text: &str) -> AppResult<()> {
+    app.shell().write_clipboard(text).map_err(|e| AppError::internal(format!("{e:#}")))
+}
+
 /// Copies a transcript to the clipboard; returns how many characters.
 pub fn copy_transcript(app: &AppHandle, session_id: &str, format: CopyFormat) -> AppResult<usize> {
     let (session, _) = load_session(app, session_id)?;

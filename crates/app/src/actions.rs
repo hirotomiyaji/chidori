@@ -25,6 +25,8 @@ pub enum Action {
     ContinueRecording(String),
     NewRecording,
     Copy(CopyFormat, Option<String>),
+    /// Some words (a line) onto the clipboard.
+    CopyText(String),
     Export(ExportKind, Option<String>, bool),
     OpenFolder(Option<String>),
     Rename(String, String),
@@ -351,6 +353,9 @@ pub fn run(app: &mut App, action: Action) -> Task {
         Action::Copy(format, id) => {
             let Some(id) = id.or_else(|| current_session_id(app)) else { return Task::none() };
             call(app, move |c| ops::copy_transcript(c, &id, format).map(|_| t("copied")), |r| toast_done(r, "failed"))
+        }
+        Action::CopyText(text) => {
+            call(app, move |c| ops::copy_text(c, &text).map(|_| t("copied")), |r| toast_done(r, "failed"))
         }
         Action::Export(kind, id, zip) => {
             let Some(id) = id.or_else(|| current_session_id(app)) else { return Task::none() };

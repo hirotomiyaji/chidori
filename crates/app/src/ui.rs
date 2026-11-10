@@ -40,6 +40,8 @@ thread_local! {
     static INPUTS: RefCell<HashMap<SharedString, Slot>> = RefCell::new(HashMap::new());
     static PENDING_FOCUS: RefCell<Option<SharedString>> = const { RefCell::new(None) };
     static RENDERED: Cell<u64> = const { Cell::new(0) };
+    /// Where the pointer last was in the window.
+    static POINTER: Cell<(f32, f32)> = const { Cell::new((0.0, 0.0)) };
     /// The text boxes built since the last frame began.
     static SEEN: RefCell<HashSet<SharedString>> = RefCell::new(HashSet::new());
 }
@@ -179,6 +181,26 @@ pub fn msg_id(msg: &Message) -> gpui_kit::ElementId {
     uid(format!("{msg:?}"))
 }
 
+pub fn set_pointer(at: gpui_kit::Point<gpui_kit::Pixels>) {
+    POINTER.with(|p| p.set((f32::from(at.x), f32::from(at.y))));
+}
+
+/// Where the pointer last was in the window, where a menu asked for without a place opens.
+pub fn pointer() -> crate::paint::Point {
+    let (x, y) = POINTER.with(|p| p.get());
+    crate::paint::Point::new(x, y)
+}
+
+/// Sends `msg` on a right click (a menu for what is under the pointer); the click goes no
+/// further, so the row under a button's menu doesn't open its own.
+pub fn on_right<E: InteractiveElement>(el: E, msg: Message) -> E {
+    el.on_mouse_down(gpui_kit::MouseButton::Right, move |e, _, cx| {
+        cx.stop_propagation();
+        set_pointer(e.position);
+        send(msg.clone(), cx);
+    })
+}
+
 /// A box that sends `msg` when clicked, with the pointer cursor; inert without one.
 pub fn clickable(msg: Option<Message>, seed: impl Hash) -> Stateful<gpui_kit::Div> {
     let id = match &msg {
@@ -307,6 +329,8 @@ impl Ui<'_> {
                 let state = self.cx.new(|cx| {
                     let mut s = TextareaState::new(self.window, cx).placeholder(placeholder).auto_grow(3, 14);
                     s.set_value(value, self.window, cx);
+                    // The app draws its own (`text_menu`).
+                    s.set_context_menu_enabled(false);
                     s
                 });
                 let sub = self.cx.subscribe(&state, move |state, ev: &InputEvent, cx| {
@@ -318,6 +342,7 @@ impl Ui<'_> {
                 let state = self.cx.new(|cx| {
                     let mut s = InputState::new(self.window, cx).placeholder(placeholder);
                     s.set_value(value, self.window, cx);
+                    s.set_context_menu_enabled(false);
                     s
                 });
                 let sub = self.cx.subscribe(&state, move |state, ev: &InputEvent, cx| {
@@ -371,11 +396,84 @@ impl Ui<'_> {
             PENDING_FOCUS.with(|p| p.borrow_mut().take());
             focus_state(&state, self.window, self.cx);
         }
-        element(&state, f.search)
+        element(&f.key, &state, f.search)
     }
 }
 
-fn element(state: &Boxed, search: bool) -> AnyElement {
+/// What a text box's menu does.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum TextOp {
+    Cut,
+    Copy,
+    Paste,
+    SelectAll,
+}
+
+/// A text box's own menu, in the app's look and words, in place of the kit's native one. The box
+/// takes the focus first (its selection kept), so the pick acts on what was chosen in it.
+fn text_menu(key: SharedString, state: &Boxed, window: &mut Window, cx: &mut Cx) -> Message {
+    let (selection, editable) = match state {
+        Boxed::Line(st) => {
+            let c = st.read(cx).context_menu_capabilities();
+            (c.is_copyable(), !c.is_disabled() && !c.is_readonly())
+        }
+        Boxed::Area(st) => {
+            let c = st.read(cx).context_menu_capabilities();
+            (c.is_copyable(), !c.is_disabled() && !c.is_readonly())
+        }
+    };
+    match state {
+        Boxed::Line(st) => st.update(cx, |s, cx| s.focus(window, cx)),
+        Boxed::Area(st) => st.update(cx, |s, cx| s.focus(window, cx)),
+    }
+    let op = |op: TextOp, on: bool| on.then(|| Message::TextEdit(key.clone(), op));
+    crate::screens::popup::Menu::new()
+        .act(crate::i18n::t("cutText"), op(TextOp::Cut, selection && editable))
+        .act(crate::i18n::t("copy"), op(TextOp::Copy, selection))
+        .act(crate::i18n::t("paste"), op(TextOp::Paste, editable))
+        .separator()
+        .act(crate::i18n::t("selectAll"), op(TextOp::SelectAll, true))
+        .open()
+}
+
+/// Carries out a pick of a text box's menu in that box.
+pub fn edit(key: &SharedString, op: TextOp, window: &mut Window, cx: &mut Cx) {
+    use gpui_kit::component::input::{Copy, Cut, Paste, SelectAll};
+    let Some(state) = INPUTS.with(|i| i.borrow().get(key).map(|s| s.state.clone())) else { return };
+    match &state {
+        Boxed::Line(st) => st.update(cx, |s, cx| s.focus(window, cx)),
+        Boxed::Area(st) => st.update(cx, |s, cx| s.focus(window, cx)),
+    }
+    let action: Box<dyn gpui_kit::Action> = match op {
+        TextOp::Cut => Box::new(Cut),
+        TextOp::Copy => Box::new(Copy),
+        TextOp::Paste => Box::new(Paste),
+        TextOp::SelectAll => Box::new(SelectAll),
+    };
+    window.dispatch_action(action, cx);
+}
+
+fn element(key: &SharedString, state: &Boxed, search: bool) -> AnyElement {
+    let menu_state = state.clone();
+    let menu_key = key.clone();
+    // Caught on the way down, since the box takes its own clicks; kept from rows around it that
+    // have a menu of their own on the way back up.
+    div()
+        .id(uid(("text-box", key)))
+        .w_full()
+        .capture_any_mouse_down(move |e, window, cx| {
+            if e.button == gpui_kit::MouseButton::Right {
+                set_pointer(e.position);
+                let menu = text_menu(menu_key.clone(), &menu_state, window, cx);
+                send(menu, cx);
+            }
+        })
+        .on_mouse_down(gpui_kit::MouseButton::Right, |_, _, cx| cx.stop_propagation())
+        .child(input_element(state, search))
+        .into_any_element()
+}
+
+fn input_element(state: &Boxed, search: bool) -> AnyElement {
     match state {
         // A search box sits in a white pill of its own; the box itself draws nothing around it.
         Boxed::Line(st) if search => Input::new(st)
@@ -408,7 +506,7 @@ fn focus_state(state: &Boxed, window: &mut Window, cx: &mut Cx) {
 /// The element of a text box already built this frame by `Ui::input`, for a part of the view
 /// built later without the window (a list's rows).
 pub fn built_input(key: &str) -> Option<AnyElement> {
-    INPUTS.with(|i| i.borrow().get(key).map(|s| element(&s.state, s.search)))
+    INPUTS.with(|i| i.borrow().get(key).map(|s| element(&SharedString::from(key.to_string()), &s.state, s.search)))
 }
 
 /// Reads the app's state where only GPUI's context is at hand (a list building its rows).

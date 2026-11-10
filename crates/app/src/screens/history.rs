@@ -21,7 +21,7 @@ use crate::model::format::{DayName, day_name, day_of, day_text, duration_text, t
 use crate::native::menu::Item;
 use crate::task::{self, Task};
 use crate::theme::{self, GRID, Ink, R_PANEL, R_ROW, R_TAG, g, line, p, project_color, tokens};
-use crate::ui::{El, Field, KeyPress, Ui, clickable};
+use crate::ui::{self, El, Field, KeyPress, Ui, clickable};
 use crate::widgets::{
     Size, Variant, btn, chip, chips, col, fill, group_label, icon_button, panel, row, text_button, with_tip,
 };
@@ -504,6 +504,10 @@ fn row_view(app: &App, e: &Entry, in_project: bool) -> El {
         .child(content);
     if checked {
         row_button = row_button.bg(hover);
+    }
+    // A right click opens the row's ⋯ menu where the pointer is.
+    if !st.selecting {
+        row_button = ui::on_right(row_button, msg(Msg::RowMenu(s.id.clone())));
     }
     row_button.into_any_element()
 }

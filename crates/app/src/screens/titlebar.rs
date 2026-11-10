@@ -12,9 +12,10 @@ use crate::i18n::t;
 use crate::icons::Icon;
 use crate::motion::{self, Look};
 use crate::native::menu::Item;
+use crate::screens::popup::Menu;
 use crate::task::Task;
-use crate::theme::{GRID, Ink, R_ROW, g, line, p, plain, tokens};
-use crate::ui::{El, clickable};
+use crate::theme::{GRID, Ink, R_ROW, g, p, plain, tokens};
+use crate::ui::{self, El, clickable};
 use crate::widgets::{icon_button_sized, row, with_tip};
 
 #[derive(Debug, Clone)]
@@ -101,11 +102,17 @@ fn tabs(app: &App) -> El {
         if place == Place::Main && busy && !here {
             content = content.child(div().flex_none().size(px(GRID)).rounded(px(GRID / 2.0)).bg(p().rec));
         }
-        let text = line(label, tokens::LABEL, if here { p().ink } else { p().muted });
+        // The label takes the tab's colour, so the hover's ink reaches it.
+        let text = plain(label, tokens::LABEL);
         content = content.child(if here { text.bold() } else { text });
         let ink = p().ink;
-        let mut b =
-            clickable(Some(Message::Go(view)), "place").flex().items_center().h(g(4.0)).px(g(2.0)).child(content);
+        let mut b = clickable(Some(Message::Go(view)), "place")
+            .flex()
+            .items_center()
+            .h(g(4.0))
+            .px(g(2.0))
+            .text_color(if here { p().ink } else { p().muted })
+            .child(content);
         if !here {
             b = b.hover(move |s| s.text_color(ink));
         }
@@ -144,7 +151,25 @@ pub fn view(app: &App) -> El {
     }
     bar = bar.child(div().flex_1()).child(solid(window_buttons(app, !setup)));
     // Where nothing else takes the pointer, the bar moves the window (Windows' own caption drag).
-    bar.id("titlebar").window_control_area(WindowControlArea::Drag).into_any_element()
+    with_window_menu(app, bar.id("titlebar").window_control_area(WindowControlArea::Drag)).into_any_element()
+}
+
+/// A right click on the bar (or the compact window's header) opens the app's window menu in
+/// place of Windows' own: its release is taken too, since Windows opens the system menu on it.
+pub fn with_window_menu<E: InteractiveElement>(app: &App, el: E) -> E {
+    let compact = app.view == View::Main && app.layout() == Layout::Compact;
+    let mut menu =
+        Menu::new().check(t("alwaysOnTop"), app.settings.window.always_on_top, Message::Win(WinAction::ToggleOnTop));
+    if !app.needs_wizard() {
+        let label = if compact { t("expand") } else { t("shrink") };
+        menu = menu.act(label, Some(Message::Win(WinAction::ToggleLayout)));
+    }
+    let menu = menu
+        .separator()
+        .act(t("minimize"), Some(Message::Win(WinAction::Minimize)))
+        .act(t("close"), Some(Message::Win(WinAction::Close)))
+        .open();
+    ui::on_right(el, menu).on_mouse_up(gpui_kit::MouseButton::Right, |_, _, cx| cx.stop_propagation())
 }
 
 /// The compact window's window buttons: expand and close.
